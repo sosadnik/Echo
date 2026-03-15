@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Echo</title>
+    <script>
+      (() => {
+        try {
+          const theme = localStorage.getItem("echo-theme");
+          if (theme === "light" || theme === "dark") {
+            document.documentElement.dataset.theme = theme;
+          }
+        } catch (_) {}
+      })();
+    </script>
+    <link rel="stylesheet" href="/static/app.css">
+  </head>
+  <body>
+    <div class="page-shell">
+      <main class="workspace">
+        <aside class="library-column">
+          <section class="sidebar-panel app-shell-panel">
+            <div class="app-panel-head">
+              <div class="app-panel-copy">
+                <p class="section-kicker">Aplikacja</p>
+                <div class="app-title-row">
+                  <h1 id="sidebar-app-name" class="sidebar-app-name">Echo</h1>
+                  <span id="sidebar-app-version" class="app-version-badge">0.1.0.0</span>
+                </div>
+              </div>
+
+              <div class="app-panel-tools">
+                <div class="theme-actions app-panel-theme-switch" role="group" aria-label="Wybór motywu">
+                  <button type="button" class="theme-button" data-theme-option="light">Jasny</button>
+                  <button type="button" class="theme-button" data-theme-option="dark">Ciemny</button>
+                  <button type="button" class="theme-button" data-theme-option="system">Auto</button>
+                </div>
+
+                <button
+                  id="open-settings-button"
+                  class="icon-button sidebar-settings-button"
+                  type="button"
+                  aria-label="Otwórz konfigurację"
+                  aria-haspopup="dialog"
+                  aria-controls="settings-modal"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M10.3 2.9h3.4l.5 2.2c.5.2 1 .4 1.4.8l2.2-.7 1.7 2.9-1.6 1.6c.1.5.2 1 .2 1.5s-.1 1-.2 1.5l1.6 1.6-1.7 2.9-2.2-.7c-.4.3-.9.6-1.4.8l-.5 2.2h-3.4l-.5-2.2c-.5-.2-1-.5-1.4-.8l-2.2.7-1.7-2.9 1.6-1.6a6.7 6.7 0 0 1 0-3L4.2 8l1.7-2.9 2.2.7c.4-.3.9-.6 1.4-.8l.8-2.1ZM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6Z"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="app-engine-strip">
+              <div class="engine-chip">
+                <span class="engine-chip-label">Model</span>
+                <span id="sidebar-model-name" class="engine-chip-value">-</span>
+              </div>
+              <div class="engine-chip">
+                <span class="engine-chip-label">Urządzenie</span>
+                <span id="sidebar-device-mode" class="engine-chip-value">-</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="sidebar-panel upload-panel">
+            <div class="section-heading">
+              <p class="section-kicker">Import</p>
+              <h2>Dodaj nagrania</h2>
+              <p>Wrzuć jeden albo kilka plików audio i od razu otwórz je w bibliotece.</p>
+            </div>
+
+            <form id="upload-form" class="upload-form">
+              <label class="field file-field">
+                <span class="field-label">Pliki audio</span>
+                <input
+                  id="recording-file"
+                  type="file"
+                  name="file"
+                  accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.mp4"
+                  multiple
+                  required
+                >
+              </label>
+              <button type="submit">Dodaj pliki</button>
+            </form>
+
+            <div id="upload-status" class="upload-status hidden" aria-live="polite"></div>
+          </section>
+
+          <section class="sidebar-panel library-panel">
+            <div class="section-row">
+              <div class="section-heading compact">
+                <p class="section-kicker">Biblioteka</p>
+                <h2>Nagrania</h2>
+              </div>
+              <button id="clear-recordings-button" type="button" class="ghost-button danger-button">Wyczyść</button>
+            </div>
+
+            <div id="recordings-list" class="recordings-list empty">Brak nagrań.</div>
+          </section>
+
+          <section class="sidebar-panel speaker-panel side-speaker-panel">
+            <div class="speaker-panel-top">
+              <div class="section-heading compact speaker-panel-heading">
+                <p class="section-kicker">Speakerzy</p>
+                <h2>Filtr i nazwy</h2>
+                <p class="transcript-summary-meta">
+                  Odznacz speakera, aby ukryć jego wypowiedzi. Kliknij nazwę, aby ją zmienić.
+                </p>
+              </div>
+            </div>
+
+            <div id="speaker-filters-empty" class="empty-state compact-empty">
+              Lista speakerów pojawi się po zakończeniu transkrypcji.
+            </div>
+
+            <div id="speaker-filters-list" class="speaker-filters-list hidden"></div>
+          </section>
+        </aside>
+
+        <section class="review-column">
+          <div id="player-empty" class="player-empty">
+            Dodaj nagranie albo wybierz je z listy. Tutaj pojawi się odtwarzacz i status transkrypcji.
+          </div>
+
+          <article id="player-view" class="player-view hidden">
+            <div class="player-hero">
+              <div class="player-copy">
+                <p class="section-kicker">Odtwarzacz</p>
+                <h2 id="player-recording-name">-</h2>
+                <p id="player-recording-meta" class="player-meta">-</p>
+              </div>
+
+              <button id="transcribe-selected-button" type="button">Transkrybuj</button>
+            </div>
+
+            <div class="review-layout">
+              <div class="player-surface">
+                <div class="player-audio-wrap">
+                  <audio id="recording-player" controls preload="metadata"></audio>
+                  <p id="player-audio-error" class="player-audio-error hidden" aria-live="polite"></p>
+                </div>
+
+                <section id="job-progress-panel" class="job-progress-panel hidden" aria-live="polite">
+                  <div class="job-progress-top">
+                    <div class="job-progress-copy">
+                      <span class="stat-label">Postęp joba</span>
+                      <strong id="job-progress-label">-</strong>
+                    </div>
+                    <span id="job-progress-percent" class="job-progress-percent">0%</span>
+                  </div>
+                  <div
+                    id="job-progress-track"
+                    class="progress-track"
+                    role="progressbar"
+                    aria-label="Postęp przetwarzania"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    aria-valuenow="0"
+                  >
+                    <span id="job-progress-fill" class="progress-fill"></span>
+                  </div>
+                </section>
+
+                <section class="transcript-panel inline-transcript-panel">
+                  <div class="panel-top transcript-panel-top">
+                    <div class="transcript-panel-copy">
+                      <div class="section-heading compact">
+                        <p class="section-kicker">Transkrypcja</p>
+                        <h2>Segmenty mówców</h2>
+                      </div>
+                      <div id="transcript-summary-meta" class="transcript-summary-meta">
+                        Kliknij timestamp, aby odtwarzacz przeskoczył do danego miejsca.
+                      </div>
+                    </div>
+                    <button id="export-transcript-button" type="button" class="ghost-button transcript-export-button" disabled>
+                      Pobierz TXT
+                    </button>
+                  </div>
+
+                  <div id="transcript-empty" class="empty-state">
+                    Wybierz nagranie i zakończony job, aby zobaczyć transkrypcję.
+                  </div>
+
+                  <article id="transcript-view" class="transcript hidden">
+                    <div id="segments-list" class="segments"></div>
+                  </article>
+                </section>
+
+                <div class="player-stats">
+                  <div class="stat-chip">
+                    <span class="stat-label">Status nagrania</span>
+                    <span id="player-recording-status">-</span>
+                  </div>
+                  <div class="stat-chip">
+                    <span class="stat-label">Wybrany job</span>
+                    <span id="selected-job-status">Brak</span>
+                  </div>
+                  <div class="stat-chip">
+                    <span class="stat-label">Ostatnia zmiana</span>
+                    <span id="selected-job-updated">-</span>
+                  </div>
+                </div>
+
+                <div id="job-history" class="job-history hidden"></div>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <div id="settings-modal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-action="close-settings"></div>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <div class="modal-header">
+          <div class="section-heading compact">
+            <p class="section-kicker">Konfiguracja</p>
+            <h2 id="settings-title">Ustawienia</h2>
+            <p>Zmiany działają dla nowych jobów. Interfejs trzyma ustawienia techniczne poza głównym workflow.</p>
+          </div>
+
+          <button id="close-settings-button" class="icon-button subtle-button" type="button" aria-label="Zamknij">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.7 5.3 12 10.6l5.3-5.3 1.4 1.4-5.3 5.3 5.3 5.3-1.4 1.4-5.3-5.3-5.3 5.3-1.4-1.4 5.3-5.3-5.3-5.3Z" />
+            </svg>
+          </button>
+        </div>
+
+        <form id="settings-form" class="settings-form">
+          <section class="settings-block">
+            <div class="settings-block-header">
+              <h3>Modele</h3>
+              <p>Whisper i diarizacja dla nowych transkrypcji.</p>
+            </div>
+
+            <div class="settings-grid">
+              <label class="field settings-card-field settings-card-field-wide">
+                <span class="field-label">Whisper model</span>
+                <select id="settings-whisper-model" name="whisper_model" required>
+                  <option value="tiny">tiny</option>
+                  <option value="base">base</option>
+                  <option value="small">small</option>
+                  <option value="medium">medium</option>
+                  <option value="large-v3">large-v3</option>
+                  <option value="turbo">turbo</option>
+                </select>
+                <span class="field-hint">Wybierz jeden z dostępnych wariantów Whisper.</span>
+              </label>
+
+              <label class="field settings-card-field">
+                <span class="field-label">Whisper device</span>
+                <select id="settings-whisper-device" name="whisper_device" required>
+                  <option value="cpu">cpu</option>
+                  <option value="cuda">cuda</option>
+                  <option value="cuda:0">cuda:0</option>
+                  <option value="cuda:1">cuda:1</option>
+                </select>
+              </label>
+
+              <label class="field settings-card-field">
+                <span class="field-label">Diarization device</span>
+                <select id="settings-diarization-device" name="diarization_device" required>
+                  <option value="cpu">cpu</option>
+                  <option value="cuda">cuda</option>
+                  <option value="cuda:0">cuda:0</option>
+                  <option value="cuda:1">cuda:1</option>
+                </select>
+              </label>
+            </div>
+
+            <input id="settings-diarization-model" name="diarization_model" type="hidden">
+          </section>
+
+          <div class="settings-actions">
+            <div>
+              <div class="settings-meta" id="settings-token-state">HF token: sprawdzanie...</div>
+              <div id="settings-status" class="settings-status hidden" aria-live="polite"></div>
+            </div>
+            <button id="settings-submit-button" type="submit" disabled>Zapisz konfigurację</button>
+          </div>
+        </form>
+
+      </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

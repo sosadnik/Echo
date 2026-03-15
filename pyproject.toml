@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "echo-recorder-review"
+version = "0.1.0"
+description = "Desktop-ready recorder review app with a local backend and web UI."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "python-multipart>=0.0.9,<1.0",
+  "uvicorn[standard]>=0.30,<1.0",
+]
+
+[project.optional-dependencies]
+local = [
+  "faster-whisper>=1.1,<2.0",
+  "pyannote.audio>=3.3,<5.0",
+]
+build = ["pyinstaller>=6.12,<7.0"]
+
+[project.scripts]
+echo = "echo_app.main:main"
+echo-launch = "echo_app.launcher:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+echo_app = ["static/*"]
