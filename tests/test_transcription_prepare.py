@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from echo_app.config import AppSettings
-from echo_app.transcription import LocalTranscriptionProvider
+from echo_app.transcription import LocalTranscriptionProvider, is_punctuation_only
 
 
 class PrepareAudioCommandTests(unittest.TestCase):
@@ -82,6 +82,16 @@ class PrepareAudioCommandTests(unittest.TestCase):
         self.assertEqual(len(commands), 2)
         self.assertIn("-af", commands[0])
         self.assertNotIn("-af", commands[1])
+
+
+class TranscriptParsingHelpersTests(unittest.TestCase):
+    def test_is_punctuation_only_detects_placeholder_tokens(self) -> None:
+        self.assertTrue(is_punctuation_only("."))
+        self.assertTrue(is_punctuation_only("..."))
+        self.assertTrue(is_punctuation_only("?!"))
+        self.assertFalse(is_punctuation_only("tak"))
+        self.assertFalse(is_punctuation_only("3"))
+        self.assertFalse(is_punctuation_only("a."))
 
 
 if __name__ == "__main__":

@@ -75,6 +75,13 @@ def scale_progress(ratio: float, start: int, end: int) -> int:
     return max(start, min(end, start + int(round((end - start) * clamped))))
 
 
+def is_punctuation_only(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    return all(not char.isalnum() for char in normalized)
+
+
 class PipelineProgressHook:
     def __init__(
         self,
@@ -335,7 +342,7 @@ class LocalTranscriptionProvider:
 
         transcribe_kwargs = {
             "beam_size": 5,
-            "vad_filter": True,
+            "vad_filter": false,
             "word_timestamps": True,
         }
         if self.settings.language_hint:
@@ -367,12 +374,12 @@ class LocalTranscriptionProvider:
                     text = (getattr(word, "word", "") or "").strip()
                     start = getattr(word, "start", None)
                     end = getattr(word, "end", None)
-                    if not text or start is None or end is None:
+                    if not text or start is None or end is None or is_punctuation_only(text):
                         continue
                     words.append(WordToken(start=float(start), end=float(end), text=text))
                 continue
 
-            if segment_text:
+            if segment_text and not is_punctuation_only(segment_text):
                 words.append(
                     WordToken(
                         start=float(getattr(segment, "start", 0.0) or 0.0),

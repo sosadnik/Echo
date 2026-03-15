@@ -47,6 +47,16 @@ class TranscriptTxtExportIn(BaseModel):
     speaker_names: dict[str, str] = Field(default_factory=dict)
 
 
+class ClipRangeIn(BaseModel):
+    start: float = Field(..., ge=0)
+    end: float = Field(..., gt=0)
+
+
+class RecordingClipPreviewIn(BaseModel):
+    ranges: list[ClipRangeIn] = Field(..., min_length=1, max_length=64)
+    padding_ms: int = Field(default=180, ge=0, le=1000)
+
+
 class SettingsOut(BaseModel):
     app_name: str
     app_version: str

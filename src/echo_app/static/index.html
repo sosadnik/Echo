@@ -103,23 +103,6 @@
             <div id="recordings-list" class="recordings-list empty">Brak nagrań.</div>
           </section>
 
-          <section class="sidebar-panel speaker-panel side-speaker-panel">
-            <div class="speaker-panel-top">
-              <div class="section-heading compact speaker-panel-heading">
-                <p class="section-kicker">Speakerzy</p>
-                <h2>Filtr i nazwy</h2>
-                <p class="transcript-summary-meta">
-                  Odznacz speakera, aby ukryć jego wypowiedzi. Kliknij nazwę, aby ją zmienić.
-                </p>
-              </div>
-            </div>
-
-            <div id="speaker-filters-empty" class="empty-state compact-empty">
-              Lista speakerów pojawi się po zakończeniu transkrypcji.
-            </div>
-
-            <div id="speaker-filters-list" class="speaker-filters-list hidden"></div>
-          </section>
         </aside>
 
         <section class="review-column">
@@ -182,6 +165,22 @@
                     </button>
                   </div>
 
+                  <section id="clip-tools" class="clip-tools hidden">
+                    <div class="clip-tools-copy">
+                      <span class="stat-label">Klipy</span>
+                      <strong id="clip-selection-title">Zaznacz fragmenty do klipu</strong>
+                      <p id="clip-selection-meta" class="transcript-summary-meta">
+                        Wybierz segmenty z listy, aby złożyć klip do porównania A/B.
+                      </p>
+                    </div>
+
+                    <div class="clip-tools-actions">
+                      <button id="clip-save-a-button" type="button">Zapisz do A</button>
+                      <button id="clip-save-b-button" type="button">Zapisz do B</button>
+                      <button id="clip-clear-selection-button" type="button" class="ghost-button">Wyczyść wybór</button>
+                    </div>
+                  </section>
+
                   <div id="transcript-empty" class="empty-state">
                     Wybierz nagranie i zakończony job, aby zobaczyć transkrypcję.
                   </div>
@@ -189,6 +188,58 @@
                   <article id="transcript-view" class="transcript hidden">
                     <div id="segments-list" class="segments"></div>
                   </article>
+                </section>
+
+                <section id="clip-compare-panel" class="compare-panel hidden">
+                  <div class="panel-top compare-panel-top">
+                    <div class="section-heading compact">
+                      <p class="section-kicker">Porównanie</p>
+                      <h2>Klipy A / B</h2>
+                      <p id="clip-compare-meta" class="transcript-summary-meta">
+                        Zapisz dwa zestawy fragmentów, aby odsłuchać je obok siebie.
+                      </p>
+                    </div>
+
+                    <button id="clip-play-sequence-button" type="button" class="ghost-button" disabled>Odtwórz A -> B</button>
+                  </div>
+
+                  <div class="compare-slots">
+                    <article class="compare-slot" data-slot="A">
+                      <div class="compare-slot-head">
+                        <span class="status-pill ready">Slot A</span>
+                      </div>
+                      <div id="clip-slot-a-empty" class="empty-state compact-empty">
+                        Zaznacz segmenty i zapisz je do slotu A.
+                      </div>
+                      <div id="clip-slot-a-content" class="compare-slot-content hidden">
+                        <p id="clip-slot-a-meta" class="compare-slot-meta">-</p>
+                        <p id="clip-slot-a-text" class="compare-slot-text">-</p>
+                        <audio id="clip-slot-a-audio" controls preload="metadata"></audio>
+                        <div class="compare-slot-actions">
+                          <button id="clip-slot-a-play-button" type="button" class="ghost-button">Odtwórz A</button>
+                          <button id="clip-slot-a-clear-button" type="button" class="ghost-button danger-button">Wyczyść</button>
+                        </div>
+                      </div>
+                    </article>
+
+                    <article class="compare-slot" data-slot="B">
+                      <div class="compare-slot-head">
+                        <span class="status-pill ready">Slot B</span>
+                      </div>
+                      <div id="clip-slot-b-empty" class="empty-state compact-empty">
+                        Zaznacz segmenty i zapisz je do slotu B.
+                      </div>
+                      <div id="clip-slot-b-content" class="compare-slot-content hidden">
+                        <p id="clip-slot-b-meta" class="compare-slot-meta">-</p>
+                        <p id="clip-slot-b-text" class="compare-slot-text">-</p>
+                        <audio id="clip-slot-b-audio" controls preload="metadata"></audio>
+                        <div class="compare-slot-actions">
+                          <button id="clip-slot-b-play-button" type="button" class="ghost-button">Odtwórz B</button>
+                          <button id="clip-slot-b-clear-button" type="button" class="ghost-button danger-button">Wyczyść</button>
+                        </div>
+                      </div>
+                    </article>
+                  </div>
                 </section>
 
                 <div class="player-stats">

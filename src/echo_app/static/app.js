@@ -18,8 +18,15 @@ const transcriptView = document.querySelector("#transcript-view");
 const transcriptSummaryMeta = document.querySelector("#transcript-summary-meta");
 const exportTranscriptButton = document.querySelector("#export-transcript-button");
 const segmentsList = document.querySelector("#segments-list");
-const speakerFiltersEmpty = document.querySelector("#speaker-filters-empty");
-const speakerFiltersList = document.querySelector("#speaker-filters-list");
+const clipTools = document.querySelector("#clip-tools");
+const clipSelectionTitle = document.querySelector("#clip-selection-title");
+const clipSelectionMeta = document.querySelector("#clip-selection-meta");
+const clipSaveAButton = document.querySelector("#clip-save-a-button");
+const clipSaveBButton = document.querySelector("#clip-save-b-button");
+const clipClearSelectionButton = document.querySelector("#clip-clear-selection-button");
+const clipComparePanel = document.querySelector("#clip-compare-panel");
+const clipCompareMeta = document.querySelector("#clip-compare-meta");
+const clipPlaySequenceButton = document.querySelector("#clip-play-sequence-button");
 const uploadForm = document.querySelector("#upload-form");
 const recordingFileInput = document.querySelector("#recording-file");
 const uploadSubmitButton = uploadForm.querySelector('button[type="submit"]');
@@ -53,6 +60,26 @@ const settingsTokenState = document.querySelector("#settings-token-state");
 const settingsStatus = document.querySelector("#settings-status");
 const settingsSubmitButton = document.querySelector("#settings-submit-button");
 const themeButtons = Array.from(document.querySelectorAll("[data-theme-option]"));
+const clipSlotRefs = {
+  A: {
+    empty: document.querySelector("#clip-slot-a-empty"),
+    content: document.querySelector("#clip-slot-a-content"),
+    meta: document.querySelector("#clip-slot-a-meta"),
+    text: document.querySelector("#clip-slot-a-text"),
+    audio: document.querySelector("#clip-slot-a-audio"),
+    playButton: document.querySelector("#clip-slot-a-play-button"),
+    clearButton: document.querySelector("#clip-slot-a-clear-button"),
+  },
+  B: {
+    empty: document.querySelector("#clip-slot-b-empty"),
+    content: document.querySelector("#clip-slot-b-content"),
+    meta: document.querySelector("#clip-slot-b-meta"),
+    text: document.querySelector("#clip-slot-b-text"),
+    audio: document.querySelector("#clip-slot-b-audio"),
+    playButton: document.querySelector("#clip-slot-b-play-button"),
+    clearButton: document.querySelector("#clip-slot-b-clear-button"),
+  },
+};
 
 let refreshInFlight = false;
 let uploadInFlight = false;
@@ -65,6 +92,17 @@ let activeSegmentIndex = -1;
 let modalReturnFocus = null;
 let renamingRecordingId = null;
 let recordingRenameDraft = "";
+const speakerFilterPanelState = {};
+const clipSelections = {};
+const clipCompareSlots = {
+  A: null,
+  B: null,
+};
+const clipBuildState = {
+  A: false,
+  B: false,
+};
+let clipSequenceMode = null;
 
 const THEME_STORAGE_KEY = "echo-theme";
 const SPEAKER_PREFS_STORAGE_KEY = "echo-speaker-prefs";
@@ -175,6 +213,185 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function formatSegmentCountLabel(count) {
+  const value = Math.max(0, Number(count) || 0);
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+
+  if (value === 1) {
+    return "1 segment";
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return `${value} segmenty`;
+  }
+  return `${value} segmentów`;
+}
+
+function truncateText(value, maxLength = 180) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized || normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function getClipSelectionIndexes(job) {
+  if (!job) {
+    return [];
+  }
+
+  const rawSelection = Array.isArray(clipSelections[job.id]) ? clipSelections[job.id] : [];
+  const normalized = [...new Set(rawSelection
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value >= 0 && value < job.segments.length))]
+    .sort((left, right) => left - right);
+
+  if (normalized.length) {
+    clipSelections[job.id] = normalized;
+  } else {
+    delete clipSelections[job.id];
+  }
+
+  return normalized;
+}
+
+function getClipSelectionSignature(job) {
+  return getClipSelectionIndexes(job).join(",");
+}
+
+function toggleClipSelection(job, segmentIndex) {
+  if (!job || !Number.isInteger(segmentIndex) || segmentIndex < 0 || segmentIndex >= job.segments.length) {
+    return;
+  }
+
+  const nextSelection = new Set(getClipSelectionIndexes(job));
+  if (nextSelection.has(segmentIndex)) {
+    nextSelection.delete(segmentIndex);
+  } else {
+    nextSelection.add(segmentIndex);
+  }
+
+  const normalized = [...nextSelection].sort((left, right) => left - right);
+  if (normalized.length) {
+    clipSelections[job.id] = normalized;
+  } else {
+    delete clipSelections[job.id];
+  }
+}
+
+function clearClipSelection(jobId) {
+  if (!jobId) {
+    return;
+  }
+
+  delete clipSelections[jobId];
+}
+
+function getClipSelectionSummary(job, recordingId) {
+  const indexes = getClipSelectionIndexes(job);
+  if (!job || !indexes.length) {
+    return {
+      indexes: [],
+      ranges: [],
+      count: 0,
+      duration: 0,
+      speakersLabel: "",
+      excerpt: "",
+    };
+  }
+
+  const speakers = [];
+  const texts = [];
+  let duration = 0;
+  const ranges = indexes.map((index) => {
+    const segment = job.segments[index];
+    const start = Math.max(0, Number(segment?.start) || 0);
+    const end = Math.max(start, Number(segment?.end) || start);
+    const displaySpeaker = getSpeakerDisplayName(recordingId, segment.speaker);
+
+    duration += Math.max(0, end - start);
+    if (displaySpeaker && !speakers.includes(displaySpeaker)) {
+      speakers.push(displaySpeaker);
+    }
+
+    const text = String(segment?.text || "").trim();
+    if (text) {
+      texts.push(text);
+    }
+
+    return { start, end };
+  });
+
+  const visibleSpeakers = speakers.slice(0, 3).join(", ");
+  const extraSpeakers = speakers.length > 3 ? ` +${speakers.length - 3}` : "";
+  return {
+    indexes,
+    ranges,
+    count: indexes.length,
+    duration,
+    speakersLabel: `${visibleSpeakers}${extraSpeakers}`.trim(),
+    excerpt: truncateText(texts.join(" ")),
+  };
+}
+
+function revokeClipSlotUrl(slot) {
+  if (!slot?.objectUrl) {
+    return;
+  }
+
+  URL.revokeObjectURL(slot.objectUrl);
+}
+
+function clearClipCompareSlot(slotKey) {
+  const slot = clipCompareSlots[slotKey];
+  if (!slot) {
+    return;
+  }
+
+  stopClipSequence();
+  const refs = clipSlotRefs[slotKey];
+  if (refs.audio.dataset.objectUrl === slot.objectUrl) {
+    resetClipSlotAudio(refs);
+  }
+  revokeClipSlotUrl(slot);
+  clipCompareSlots[slotKey] = null;
+}
+
+function setClipCompareSlot(slotKey, payload) {
+  clearClipCompareSlot(slotKey);
+  clipCompareSlots[slotKey] = payload;
+}
+
+function ensureClipSlotsCompatible(selectedRecording, selectedJob) {
+  const recordingId = selectedRecording?.id || null;
+  const jobId = selectedJob?.id || null;
+
+  Object.keys(clipCompareSlots).forEach((slotKey) => {
+    const slot = clipCompareSlots[slotKey];
+    if (!slot) {
+      return;
+    }
+
+    if (slot.recordingId !== recordingId || slot.jobId !== jobId) {
+      clearClipCompareSlot(slotKey);
+    }
+  });
+}
+
+function pauseCompareAudios({ except = null } = {}) {
+  Object.entries(clipSlotRefs).forEach(([slotKey, refs]) => {
+    if (slotKey === except) {
+      return;
+    }
+
+    refs.audio.pause();
+  });
+}
+
+function stopClipSequence() {
+  clipSequenceMode = null;
 }
 
 function jobStatusLabel(status) {
@@ -728,6 +945,56 @@ function readXhrPayload(request) {
   }
 }
 
+function renderRecordingSpeakerFilters(recordingId) {
+  if (!recordingId || recordingId !== state.selectedRecordingId) {
+    return "";
+  }
+
+  const selectedJob = getSelectedJob();
+  if (
+    !selectedJob
+    || selectedJob.recording_id !== recordingId
+    || selectedJob.status !== "completed"
+    || !selectedJob.segments.length
+  ) {
+    return "";
+  }
+
+  const speakerEntries = getSpeakerEntries(selectedJob, recordingId);
+  if (!speakerEntries.length) {
+    return "";
+  }
+
+  const isOpen = speakerFilterPanelState[recordingId] ?? true;
+  return `
+    <details class="recording-speaker-filters" data-action="speaker-filters-panel" ${isOpen ? "open" : ""}>
+      <summary class="recording-speaker-summary">Filtry speakerów</summary>
+      <div class="recording-speaker-list">
+        ${speakerEntries.map((entry) => `
+          <div class="recording-speaker-item ${entry.hidden ? "is-hidden" : ""}">
+            <input
+              class="recording-speaker-checkbox"
+              type="checkbox"
+              data-action="toggle-speaker"
+              data-speaker="${escapeHtml(entry.rawSpeaker)}"
+              aria-label="Pokaż speakera ${escapeHtml(entry.displayName)}"
+              ${entry.hidden ? "" : "checked"}
+            >
+            <button
+              type="button"
+              class="speaker-name-button recording-speaker-name"
+              data-action="rename-speaker"
+              data-speaker="${escapeHtml(entry.rawSpeaker)}"
+            >
+              ${escapeHtml(entry.displayName)}
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    </details>
+  `;
+}
+
 function renderRecordings() {
   const hasRecordings = state.recordings.length > 0;
   const hasProcessing = state.recordings.some((recording) => recording.status === "processing");
@@ -746,6 +1013,7 @@ function renderRecordings() {
     const isRenaming = recording.id === renamingRecordingId;
     const busy = recording.status === "processing" || cleanupInFlight || uploadInFlight || renameInFlight;
     const hasJobs = getRecordingJobs(recording.id).length > 0;
+    const speakerFiltersMarkup = renderRecordingSpeakerFilters(recording.id);
     const detailMarkup = summary.progressJob
       ? renderProgressMarkup(summary.progressJob)
       : `<div class="recording-detail">${escapeHtml(summary.detail)}</div>`;
@@ -824,6 +1092,7 @@ function renderRecordings() {
             Usuń
           </button>
         </div>
+        ${speakerFiltersMarkup}
       </article>
     `;
   }).join("");
@@ -930,75 +1199,6 @@ function renderPlayer() {
   `).join("");
 }
 
-function showSpeakerFiltersEmpty(message) {
-  speakerFiltersList.innerHTML = "";
-  speakerFiltersList.classList.add("hidden");
-  speakerFiltersEmpty.textContent = message;
-  speakerFiltersEmpty.classList.remove("hidden");
-}
-
-function renderSpeakerFilters() {
-  const selectedRecording = getSelectedRecording();
-  const selectedJob = getSelectedJob();
-
-  if (!selectedRecording) {
-    showSpeakerFiltersEmpty("Wybierz nagranie, aby zarządzać speakerami.");
-    return;
-  }
-
-  if (!selectedJob) {
-    showSpeakerFiltersEmpty("Lista speakerów pojawi się po utworzeniu joba dla tego nagrania.");
-    return;
-  }
-
-  if (selectedJob.status !== "completed") {
-    showSpeakerFiltersEmpty("Lista speakerów pojawi się po zakończeniu transkrypcji.");
-    return;
-  }
-
-  if (!selectedJob.segments.length) {
-    showSpeakerFiltersEmpty("Ten wynik nie zawiera speakerów do filtrowania.");
-    return;
-  }
-
-  const speakerEntries = getSpeakerEntries(selectedJob, selectedRecording.id);
-  if (!speakerEntries.length) {
-    showSpeakerFiltersEmpty("Ten wynik nie zawiera speakerów do filtrowania.");
-    return;
-  }
-
-  speakerFiltersEmpty.classList.add("hidden");
-  speakerFiltersList.classList.remove("hidden");
-  speakerFiltersList.innerHTML = speakerEntries.map((entry) => `
-    <div class="speaker-filter-item ${entry.hidden ? "is-hidden" : ""}">
-      <label class="speaker-toggle">
-        <input
-          type="checkbox"
-          data-action="toggle-speaker"
-          data-speaker="${escapeHtml(entry.rawSpeaker)}"
-          ${entry.hidden ? "" : "checked"}
-        >
-        <span>Pokaż</span>
-      </label>
-
-      <div class="speaker-filter-copy">
-        <button
-          type="button"
-          class="speaker-name-button"
-          data-action="rename-speaker"
-          data-speaker="${escapeHtml(entry.rawSpeaker)}"
-        >
-          ${escapeHtml(entry.displayName)}
-        </button>
-        <div class="speaker-filter-meta">
-          ${entry.displayName !== entry.rawSpeaker ? `${escapeHtml(entry.rawSpeaker)} • ` : ""}
-          ${entry.count} segmentów
-        </div>
-      </div>
-    </div>
-  `).join("");
-}
-
 function canExportSelectedTranscript() {
   const selectedJob = getSelectedJob();
   return Boolean(selectedJob && selectedJob.status === "completed" && selectedJob.segments.length);
@@ -1007,6 +1207,119 @@ function canExportSelectedTranscript() {
 function renderTranscriptExportButton() {
   exportTranscriptButton.disabled = !canExportSelectedTranscript() || exportInFlight;
   exportTranscriptButton.textContent = exportInFlight ? "Pobieranie..." : "Pobierz TXT";
+}
+
+function resetClipSlotAudio(refs) {
+  refs.audio.pause();
+  refs.audio.removeAttribute("src");
+  refs.audio.dataset.objectUrl = "";
+  refs.audio.load();
+}
+
+function renderClipSlot(slotKey) {
+  const refs = clipSlotRefs[slotKey];
+  const slot = clipCompareSlots[slotKey];
+
+  refs.playButton.textContent = `Odtwórz ${slotKey}`;
+  refs.clearButton.disabled = !slot;
+  refs.playButton.disabled = !slot;
+
+  if (!slot) {
+    refs.empty.classList.remove("hidden");
+    refs.content.classList.add("hidden");
+    refs.meta.textContent = "-";
+    refs.text.textContent = "-";
+    if (refs.audio.dataset.objectUrl) {
+      resetClipSlotAudio(refs);
+    }
+    return;
+  }
+
+  refs.empty.classList.add("hidden");
+  refs.content.classList.remove("hidden");
+
+  const metaParts = [formatSegmentCountLabel(slot.count), formatTimecode(slot.duration)];
+  if (slot.speakersLabel) {
+    metaParts.push(slot.speakersLabel);
+  }
+  refs.meta.textContent = metaParts.join(" • ");
+  refs.text.textContent = slot.excerpt || "Wybrany klip nie ma podglądu tekstu.";
+
+  if (refs.audio.dataset.objectUrl !== slot.objectUrl) {
+    refs.audio.pause();
+    refs.audio.src = slot.objectUrl;
+    refs.audio.dataset.objectUrl = slot.objectUrl;
+    refs.audio.load();
+  }
+}
+
+function renderClipTools() {
+  const selectedRecording = getSelectedRecording();
+  const selectedJob = getSelectedJob();
+  const shouldShow = Boolean(
+    selectedRecording
+    && selectedJob
+    && selectedJob.status === "completed"
+    && selectedJob.segments.length,
+  );
+
+  if (!shouldShow) {
+    clipTools.classList.add("hidden");
+    clipSelectionTitle.textContent = "Zaznacz fragmenty do klipu";
+    clipSelectionMeta.textContent = "Wybierz zakończony job, aby budować klipy z segmentów.";
+    clipSaveAButton.disabled = true;
+    clipSaveBButton.disabled = true;
+    clipClearSelectionButton.disabled = true;
+    clipSaveAButton.textContent = "Zapisz do A";
+    clipSaveBButton.textContent = "Zapisz do B";
+    return;
+  }
+
+  const summary = getClipSelectionSummary(selectedJob, selectedRecording.id);
+  clipTools.classList.remove("hidden");
+  clipSelectionTitle.textContent = summary.count
+    ? `Zaznaczono ${formatSegmentCountLabel(summary.count)}`
+    : "Zaznacz fragmenty do klipu";
+  clipSelectionMeta.textContent = summary.count
+    ? `${formatTimecode(summary.duration)} łącznie${summary.speakersLabel ? ` • ${summary.speakersLabel}` : ""}`
+    : "Wybierz segmenty z listy poniżej, a potem zapisz je do slotu A albo B.";
+
+  clipSaveAButton.disabled = !summary.count || clipBuildState.A;
+  clipSaveBButton.disabled = !summary.count || clipBuildState.B;
+  clipClearSelectionButton.disabled = !summary.count;
+  clipSaveAButton.textContent = clipBuildState.A ? "Buduję A..." : "Zapisz do A";
+  clipSaveBButton.textContent = clipBuildState.B ? "Buduję B..." : "Zapisz do B";
+}
+
+function renderClipComparePanel() {
+  const selectedRecording = getSelectedRecording();
+  const selectedJob = getSelectedJob();
+  ensureClipSlotsCompatible(selectedRecording, selectedJob);
+
+  const shouldShow = Boolean(
+    selectedRecording
+    && selectedJob
+    && selectedJob.status === "completed"
+    && selectedJob.segments.length,
+  );
+
+  if (!shouldShow) {
+    stopClipSequence();
+    pauseCompareAudios();
+    clipComparePanel.classList.add("hidden");
+    Object.keys(clipSlotRefs).forEach(renderClipSlot);
+    return;
+  }
+
+  clipComparePanel.classList.remove("hidden");
+  const hasA = Boolean(clipCompareSlots.A);
+  const hasB = Boolean(clipCompareSlots.B);
+  clipCompareMeta.textContent = hasA && hasB
+    ? "Masz dwa klipy gotowe do szybkiego porównania."
+    : "Zapisz dwa zestawy fragmentów, aby odsłuchać je obok siebie.";
+  clipPlaySequenceButton.disabled = !hasA || !hasB || clipBuildState.A || clipBuildState.B;
+
+  Object.keys(clipSlotRefs).forEach(renderClipSlot);
 }
 
 function clearActiveSegmentHighlight() {
@@ -1086,11 +1399,13 @@ function renderTranscript() {
   transcriptView.classList.remove("hidden");
 
   const visibleSegments = getVisibleSegments(selectedJob, selectedRecording.id);
+  const selectedSegmentIndexes = new Set(getClipSelectionIndexes(selectedJob));
   const transcriptRenderKey = [
     selectedJob.id,
     selectedJob.updated_at,
     selectedJob.status,
     getSpeakerPrefsSignature(selectedRecording.id),
+    getClipSelectionSignature(selectedJob),
   ].join(":");
 
   transcriptSummaryMeta.textContent = selectedJob.segments.length
@@ -1103,8 +1418,10 @@ function renderTranscript() {
     } else if (!visibleSegments.length) {
       segmentsList.innerHTML = '<div class="empty-state compact-empty">Wszyscy speakerzy są odfiltrowani. Zaznacz co najmniej jednego, aby zobaczyć wypowiedzi.</div>';
     } else {
-      segmentsList.innerHTML = visibleSegments.map(({ segment, index, displayName }) => `
-        <section class="segment-card" data-segment-index="${index}">
+      segmentsList.innerHTML = visibleSegments.map(({ segment, index, displayName }) => {
+        const isSelected = selectedSegmentIndexes.has(index);
+        return `
+        <section class="segment-card ${isSelected ? "is-selected" : ""}" data-segment-index="${index}">
           <div class="segment-meta">
             <div class="segment-speaker-group">
               <button
@@ -1119,19 +1436,30 @@ function renderTranscript() {
                 ? `<span class="segment-speaker-origin">${escapeHtml(segment.speaker)}</span>`
                 : ""}
             </div>
-            <button
-              type="button"
-              class="timestamp-button"
-              data-action="seek-segment"
-              data-seconds="${segment.start}"
-            >
-              ${formatTimecode(segment.start)}
-            </button>
+            <div class="segment-actions">
+              <button
+                type="button"
+                class="ghost-button segment-select-button ${isSelected ? "is-selected" : ""}"
+                data-action="toggle-segment-selection"
+                data-segment-index="${index}"
+              >
+                ${isSelected ? "Wybrane" : "Zaznacz"}
+              </button>
+              <button
+                type="button"
+                class="timestamp-button"
+                data-action="seek-segment"
+                data-seconds="${segment.start}"
+              >
+                ${formatTimecode(segment.start)}
+              </button>
+            </div>
           </div>
           <p class="segment-text">${escapeHtml(segment.text)}</p>
           <div class="segment-range">${formatTimecode(segment.start)} - ${formatTimecode(segment.end)}</div>
         </section>
-      `).join("");
+      `;
+      }).join("");
     }
 
     segmentsList.dataset.renderKey = transcriptRenderKey;
@@ -1148,8 +1476,9 @@ function renderAll() {
   renderRecordings();
   renderPlayer();
   renderTranscriptExportButton();
-  renderSpeakerFilters();
+  renderClipTools();
   renderTranscript();
+  renderClipComparePanel();
 }
 
 async function refreshState({ force = false } = {}) {
@@ -1338,6 +1667,43 @@ async function exportTranscript(jobId, recordingId) {
   };
 }
 
+async function buildClipPreview(recordingId, ranges) {
+  let response;
+  try {
+    response = await fetch(`/api/recordings/${recordingId}/clips/preview`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ranges,
+        padding_ms: 180,
+      }),
+    });
+  } catch (_) {
+    throw new Error("Backend niedostępny albo połączenie zostało przerwane.");
+  }
+
+  if (!response.ok) {
+    const payload = await response.text();
+    let message = payload || `Request failed: ${response.status}`;
+
+    try {
+      const parsed = JSON.parse(payload);
+      message = parsed.detail || parsed.message || message;
+    } catch (_) {
+      message = payload || message;
+    }
+
+    throw new Error(message);
+  }
+
+  return {
+    blob: await response.blob(),
+    filename: readResponseFilename(response.headers.get("Content-Disposition")) || "clip.wav",
+  };
+}
+
 function triggerFileDownload(blob, filename) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
@@ -1347,6 +1713,85 @@ function triggerFileDownload(blob, filename) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+async function saveSelectionToClipSlot(slotKey) {
+  const selectedRecording = getSelectedRecording();
+  const selectedJob = getSelectedJob();
+  if (
+    !selectedRecording
+    || !selectedJob
+    || selectedJob.status !== "completed"
+    || clipBuildState[slotKey]
+  ) {
+    return;
+  }
+
+  const summary = getClipSelectionSummary(selectedJob, selectedRecording.id);
+  if (!summary.count) {
+    window.alert("Zaznacz co najmniej jeden segment, aby zbudować klip.");
+    return;
+  }
+
+  clipBuildState[slotKey] = true;
+  renderClipTools();
+  renderClipComparePanel();
+
+  try {
+    const { blob, filename } = await buildClipPreview(selectedRecording.id, summary.ranges);
+    setClipCompareSlot(slotKey, {
+      recordingId: selectedRecording.id,
+      jobId: selectedJob.id,
+      objectUrl: URL.createObjectURL(blob),
+      filename,
+      count: summary.count,
+      duration: summary.duration,
+      speakersLabel: summary.speakersLabel,
+      excerpt: summary.excerpt,
+    });
+    clearClipSelection(selectedJob.id);
+  } catch (error) {
+    window.alert(`Nie udało się zbudować klipu ${slotKey}: ${error.message}`);
+  } finally {
+    clipBuildState[slotKey] = false;
+    renderAll();
+  }
+}
+
+function playClipSlot(slotKey) {
+  const slot = clipCompareSlots[slotKey];
+  if (!slot) {
+    return;
+  }
+
+  stopClipSequence();
+  recordingPlayer.pause();
+  pauseCompareAudios({ except: slotKey });
+  const audio = clipSlotRefs[slotKey].audio;
+  audio.currentTime = 0;
+  audio.play().catch(() => {});
+}
+
+async function playClipSequence() {
+  if (!clipCompareSlots.A || !clipCompareSlots.B) {
+    return;
+  }
+
+  stopClipSequence();
+  clipSequenceMode = "running";
+  recordingPlayer.pause();
+  pauseCompareAudios();
+
+  const audioA = clipSlotRefs.A.audio;
+  const audioB = clipSlotRefs.B.audio;
+  audioA.currentTime = 0;
+  audioB.currentTime = 0;
+
+  try {
+    await audioA.play();
+  } catch (_) {
+    stopClipSequence();
+  }
 }
 
 function openSettingsModal() {
@@ -1519,6 +1964,34 @@ recordingPlayer.addEventListener("timeupdate", syncActiveSegment);
 recordingPlayer.addEventListener("seeked", syncActiveSegment);
 recordingPlayer.addEventListener("canplay", () => setPlayerAudioError(""));
 recordingPlayer.addEventListener("loadedmetadata", syncActiveSegment);
+recordingPlayer.addEventListener("play", () => {
+  stopClipSequence();
+  pauseCompareAudios();
+});
+
+Object.entries(clipSlotRefs).forEach(([slotKey, refs]) => {
+  refs.audio.addEventListener("play", () => {
+    recordingPlayer.pause();
+    pauseCompareAudios({ except: slotKey });
+  });
+
+  refs.audio.addEventListener("ended", () => {
+    if (clipSequenceMode !== "running") {
+      return;
+    }
+
+    if (slotKey === "A" && clipCompareSlots.B) {
+      const audioB = clipSlotRefs.B.audio;
+      audioB.currentTime = 0;
+      audioB.play().catch(() => {
+        stopClipSequence();
+      });
+      return;
+    }
+
+    stopClipSequence();
+  });
+});
 
 applyTheme(getStoredTheme());
 
@@ -1603,6 +2076,12 @@ async function handleTranscription(recordingId) {
 }
 
 recordingsList.addEventListener("click", async (event) => {
+  const renameSpeakerTarget = event.target.closest('[data-action="rename-speaker"]');
+  if (renameSpeakerTarget) {
+    renameSpeaker(state.selectedRecordingId, renameSpeakerTarget.dataset.speaker);
+    return;
+  }
+
   const startRenameTarget = event.target.closest('[data-action="start-rename"]');
   if (startRenameTarget) {
     startRecordingRename(startRenameTarget.dataset.recordingId);
@@ -1653,6 +2132,10 @@ recordingsList.addEventListener("click", async (event) => {
     return;
   }
 
+  if (event.target.closest('[data-action="speaker-filters-panel"]')) {
+    return;
+  }
+
   const selectTarget = event.target.closest('[data-action="select-recording"]');
   if (!selectTarget) {
     return;
@@ -1674,6 +2157,30 @@ recordingsList.addEventListener("input", (event) => {
 
   recordingRenameDraft = target.value;
 });
+
+recordingsList.addEventListener("change", (event) => {
+  const target = event.target.closest('[data-action="toggle-speaker"]');
+  if (!target) {
+    return;
+  }
+
+  setSpeakerHidden(state.selectedRecordingId, target.dataset.speaker, !target.checked);
+  renderAll();
+});
+
+recordingsList.addEventListener("toggle", (event) => {
+  const target = event.target.closest('[data-action="speaker-filters-panel"]');
+  if (!target) {
+    return;
+  }
+
+  const recordingCard = target.closest('[data-recording-id]');
+  if (!recordingCard?.dataset.recordingId) {
+    return;
+  }
+
+  speakerFilterPanelState[recordingCard.dataset.recordingId] = target.open;
+}, true);
 
 recordingsList.addEventListener("submit", async (event) => {
   const form = event.target.closest('[data-action="rename-recording-form"]');
@@ -1758,6 +2265,48 @@ exportTranscriptButton.addEventListener("click", async () => {
   }
 });
 
+clipSaveAButton.addEventListener("click", async () => {
+  await saveSelectionToClipSlot("A");
+});
+
+clipSaveBButton.addEventListener("click", async () => {
+  await saveSelectionToClipSlot("B");
+});
+
+clipClearSelectionButton.addEventListener("click", () => {
+  const selectedJob = getSelectedJob();
+  if (!selectedJob) {
+    return;
+  }
+
+  clearClipSelection(selectedJob.id);
+  renderAll();
+});
+
+clipPlaySequenceButton.addEventListener("click", async () => {
+  await playClipSequence();
+});
+
+clipSlotRefs.A.playButton.addEventListener("click", () => {
+  playClipSlot("A");
+});
+
+clipSlotRefs.B.playButton.addEventListener("click", () => {
+  playClipSlot("B");
+});
+
+clipSlotRefs.A.clearButton.addEventListener("click", () => {
+  stopClipSequence();
+  clearClipCompareSlot("A");
+  renderClipComparePanel();
+});
+
+clipSlotRefs.B.clearButton.addEventListener("click", () => {
+  stopClipSequence();
+  clearClipCompareSlot("B");
+  renderClipComparePanel();
+});
+
 clearRecordingsButton.addEventListener("click", async () => {
   if (!state.recordings.length) {
     return;
@@ -1837,6 +2386,18 @@ jobHistory.addEventListener("click", (event) => {
 });
 
 segmentsList.addEventListener("click", (event) => {
+  const selectionTarget = event.target.closest('[data-action="toggle-segment-selection"]');
+  if (selectionTarget) {
+    const selectedJob = getSelectedJob();
+    if (!selectedJob) {
+      return;
+    }
+
+    toggleClipSelection(selectedJob, Number(selectionTarget.dataset.segmentIndex));
+    renderAll();
+    return;
+  }
+
   const renameTarget = event.target.closest('[data-action="rename-speaker"]');
   if (renameTarget) {
     renameSpeaker(state.selectedRecordingId, renameTarget.dataset.speaker);
@@ -1851,30 +2412,16 @@ segmentsList.addEventListener("click", (event) => {
   seekTo(Number(target.dataset.seconds));
 });
 
-speakerFiltersList.addEventListener("click", (event) => {
-  const target = event.target.closest('[data-action="rename-speaker"]');
-  if (!target) {
-    return;
-  }
-
-  renameSpeaker(state.selectedRecordingId, target.dataset.speaker);
-});
-
-speakerFiltersList.addEventListener("change", (event) => {
-  const target = event.target.closest('[data-action="toggle-speaker"]');
-  if (!target) {
-    return;
-  }
-
-  setSpeakerHidden(state.selectedRecordingId, target.dataset.speaker, !target.checked);
-  renderAll();
-});
-
 refreshState().catch((error) => {
   refreshInFlight = false;
   state.health = null;
   renderStatus();
   setUploadStatus(`Backend offline: ${error.message}`, "error");
+});
+
+window.addEventListener("beforeunload", () => {
+  stopClipSequence();
+  Object.keys(clipCompareSlots).forEach(clearClipCompareSlot);
 });
 
 window.setInterval(() => {

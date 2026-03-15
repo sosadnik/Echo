@@ -656,6 +656,77 @@ button:disabled {
   border-radius: 14px;
 }
 
+.recording-speaker-filters {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--panel-soft);
+}
+
+.recording-speaker-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  list-style: none;
+  text-transform: uppercase;
+}
+
+.recording-speaker-summary::-webkit-details-marker {
+  display: none;
+}
+
+.recording-speaker-summary::marker {
+  content: "";
+}
+
+.recording-speaker-summary::after {
+  content: "▾";
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  transition: transform 160ms ease;
+}
+
+.recording-speaker-filters:not([open]) .recording-speaker-summary::after {
+  transform: rotate(-90deg);
+}
+
+.recording-speaker-list {
+  display: grid;
+  gap: 6px;
+}
+
+.recording-speaker-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--panel);
+}
+
+.recording-speaker-item.is-hidden {
+  opacity: 0.65;
+}
+
+.recording-speaker-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.recording-speaker-name {
+  min-width: 0;
+}
+
 .recording-progress,
 .job-progress-panel {
   display: grid;
@@ -955,6 +1026,98 @@ audio {
   white-space: nowrap;
 }
 
+.clip-tools,
+.compare-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border-radius: 22px;
+  background: var(--panel);
+  box-shadow: var(--shadow-soft);
+}
+
+.clip-tools {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  background: var(--panel-soft);
+}
+
+.clip-tools-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.clip-tools-actions,
+.compare-slot-actions,
+.segment-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.clip-tools-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.clip-tools-actions button {
+  min-width: 0;
+}
+
+.compare-panel-top {
+  align-items: flex-start;
+}
+
+.compare-slots {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.compare-slot {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 20px;
+  background: var(--panel-soft);
+}
+
+.compare-slot-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.compare-slot-content {
+  display: grid;
+  gap: 12px;
+}
+
+.compare-slot-meta,
+.compare-slot-text {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.compare-slot-meta {
+  font-size: 0.88rem;
+}
+
+.compare-slot-text {
+  min-height: 2.8em;
+}
+
+.compare-slot-actions {
+  flex-wrap: wrap;
+}
+
+.compare-slot-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .transcript {
   display: grid;
   gap: 10px;
@@ -978,6 +1141,11 @@ audio {
   box-shadow: 0 20px 44px rgba(15, 118, 110, 0.14);
 }
 
+.segment-card.is-selected:not(.active) {
+  background: var(--panel-soft);
+  box-shadow: 0 18px 38px rgba(24, 47, 63, 0.12);
+}
+
 .segment-card.active .timestamp-button {
   background: var(--accent);
   color: #f6fffd;
@@ -985,6 +1153,11 @@ audio {
 
 .segment-meta {
   align-items: center;
+}
+
+.segment-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .segment-speaker-group {
@@ -1008,6 +1181,17 @@ audio {
   background: var(--panel-strong);
   color: var(--accent-strong);
   box-shadow: none;
+}
+
+.segment-select-button {
+  padding: 8px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.segment-select-button.is-selected {
+  background: var(--accent);
+  color: #f6fffd;
 }
 
 .speaker-name-button {
@@ -1214,8 +1398,19 @@ audio:focus-visible {
   }
 
   .player-stats,
-  .settings-grid {
+  .settings-grid,
+  .compare-slots {
     grid-template-columns: 1fr;
+  }
+
+  .clip-tools {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .clip-tools-actions,
+  .segment-actions {
+    justify-content: flex-start;
   }
 
   .sidebar-settings-button {
@@ -1249,7 +1444,9 @@ audio:focus-visible {
   }
 
   .recording-actions,
-  .job-history {
+  .job-history,
+  .clip-tools-actions,
+  .compare-slot-actions {
     flex-direction: column;
   }
 
@@ -1274,7 +1471,9 @@ audio:focus-visible {
   .theme-button,
   .job-pill,
   .settings-actions button,
-  .transcript-export-button {
+  .transcript-export-button,
+  .clip-tools-actions button,
+  .compare-slot-actions button {
     width: 100%;
   }
 }

@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from uuid import uuid4
 
 from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
@@ -20,7 +21,16 @@ from fastapi.staticfiles import StaticFiles
 from .config import AppSettings
 from .jobs import JobRunner
 from .repository import EchoRepository
-from .schemas import JobOut, RecordingOut, RecordingRenameIn, SettingsOut, SettingsUpdateIn, TranscriptTxtExportIn
+from .schemas import (
+    ClipRangeIn,
+    JobOut,
+    RecordingClipPreviewIn,
+    RecordingOut,
+    RecordingRenameIn,
+    SettingsOut,
+    SettingsUpdateIn,
+    TranscriptTxtExportIn,
+)
 from .transcription import build_provider
 
 
@@ -233,6 +243,103 @@ def _build_export_filename(original_name: str) -> str:
     base_name = Path(original_name).stem.strip() or "transcript"
     safe_name = SAFE_FILENAME_RE.sub("_", base_name).strip("._") or "transcript"
     return f"{safe_name}_diarized.txt"
+
+
+def _build_clip_preview_filename(original_name: str) -> str:
+    base_name = Path(original_name).stem.strip() or "clip"
+    safe_name = SAFE_FILENAME_RE.sub("_", base_name).strip("._") or "clip"
+    return f"{safe_name}_clip.wav"
+
+
+def _normalize_clip_ranges(ranges: list[ClipRangeIn], padding_ms: int) -> list[tuple[float, float]]:
+    padding_seconds = max(0.0, float(padding_ms) / 1000.0)
+    normalized: list[tuple[float, float]] = []
+
+    for item in ranges:
+        start = max(0.0, float(item.start or 0.0))
+        end = max(0.0, float(item.end or 0.0))
+        if end <= start:
+            raise ValueError("Kazdy fragment musi miec koniec wiekszy niz poczatek.")
+        normalized.append((max(0.0, start - padding_seconds), end + padding_seconds))
+
+    normalized.sort(key=lambda item: item[0])
+    merged: list[list[float]] = []
+    for start, end in normalized:
+        if not merged or start > merged[-1][1] + 0.03:
+            merged.append([start, end])
+            continue
+        merged[-1][1] = max(merged[-1][1], end)
+
+    return [(round(start, 3), round(end, 3)) for start, end in merged]
+
+
+def _build_clip_filter_expression(ranges: list[tuple[float, float]]) -> str:
+    filter_parts: list[str] = []
+    clip_labels: list[str] = []
+
+    for index, (start, end) in enumerate(ranges):
+        label = f"clip{index}"
+        clip_labels.append(f"[{label}]")
+        filter_parts.append(
+            f"[0:a]atrim=start={start:.3f}:end={end:.3f},asetpts=PTS-STARTPTS[{label}]"
+        )
+
+    if len(clip_labels) == 1:
+        filter_parts.append(f"{clip_labels[0]}anull[out]")
+    else:
+        filter_parts.append(f"{''.join(clip_labels)}concat=n={len(clip_labels)}:v=0:a=1[out]")
+
+    return ";".join(filter_parts)
+
+
+def _render_clip_preview(source_path: Path, ranges: list[tuple[float, float]]) -> bytes:
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path is None:
+        raise PlaybackPreparationError(
+            "Brak `ffmpeg` w systemie. Jest wymagany do przygotowania klipow audio."
+        )
+
+    filter_expression = _build_clip_filter_expression(ranges)
+    with tempfile.TemporaryDirectory(prefix="echo-clip-") as temp_dir:
+        output_path = Path(temp_dir) / "clip.wav"
+        command = [
+            ffmpeg_path,
+            "-v",
+            "error",
+            "-y",
+            "-i",
+            str(source_path),
+            "-filter_complex",
+            filter_expression,
+            "-map",
+            "[out]",
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-c:a",
+            "pcm_s16le",
+            str(output_path),
+        ]
+        try:
+            subprocess.run(command, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as exc:
+            details = (exc.stderr or exc.stdout or "").strip()
+            suffix = f" {details}" if details else ""
+            raise PlaybackPreparationError(
+                f"Nie udalo sie przygotowac klipu audio dla `{source_path.name}`.{suffix}"
+            ) from exc
+
+        if not output_path.exists():
+            raise PlaybackPreparationError("ffmpeg nie utworzyl pliku wyjsciowego dla klipu.")
+
+        try:
+            return output_path.read_bytes()
+        except OSError as exc:
+            raise PlaybackPreparationError(
+                f"Nie udalo sie odczytac wygenerowanego klipu `{output_path.name}`: {exc}"
+            ) from exc
 
 
 def create_app() -> FastAPI:
@@ -530,6 +637,40 @@ def create_app() -> FastAPI:
             filename=filename,
             media_type=media_type,
             content_disposition_type="inline",
+        )
+
+    @app.post("/api/recordings/{recording_id}/clips/preview")
+    async def preview_recording_clip(recording_id: str, payload: RecordingClipPreviewIn) -> Response:
+        recording = current_repository().get_recording(recording_id)
+        if not recording:
+            raise HTTPException(status_code=404, detail="Recording not found.")
+
+        stored_path = Path(recording["stored_path"])
+        if not stored_path.exists() or not stored_path.is_file():
+            raise HTTPException(status_code=404, detail="Recording file not found.")
+
+        try:
+            ranges = _normalize_clip_ranges(payload.ranges, payload.padding_ms)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        try:
+            playback_path, _, _ = _resolve_playback_source(
+                recording_id=recording["id"],
+                original_name=recording["original_name"],
+                stored_path=stored_path,
+                playback_dir=current_settings().playback_dir,
+            )
+            clip_bytes = await run_in_threadpool(_render_clip_preview, playback_path, ranges)
+        except PlaybackPreparationError as exc:
+            LOGGER.warning("Clip preview preparation failed for `%s`: %s", recording["original_name"], exc)
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+        filename = _build_clip_preview_filename(recording["original_name"])
+        return Response(
+            content=clip_bytes,
+            media_type="audio/wav",
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
         )
 
     @app.get("/api/jobs", response_model=list[JobOut])
