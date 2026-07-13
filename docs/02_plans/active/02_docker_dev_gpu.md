@@ -56,26 +56,26 @@ Na serwerze popos `docker compose up` buduje i uruchamia Echo tak, że:
       `uvicorn echo_app.app:create_app --factory --reload --host 0.0.0.0 --port 8765`.
       Weryfikacja: `docker compose config` przechodzi; kontener startuje i widzi GPU
       (`docker compose exec echo nvidia-smi`).
-- [ ] 3. **Uruchomienie na popos** — repo już sklonowane w `~/Documents/Git/Echo`
+- [x] 3. **Uruchomienie na popos** — repo już sklonowane w `~/Documents/Git/Echo`
       (origin: github.com/sosadnik/Echo.git; wymaga `git pull` po wypchnięciu plików
       z kroków 1–2); `.env` z `HF_TOKEN` **już istnieje** na serwerze;
       `docker compose up -d`; API odpowiada
       (`curl 127.0.0.1:8765` na popos i przez tunel z Maca); testy jednostkowe
       w kontenerze zielone; edycja pliku w `src/` → widoczny auto-reload w logach.
-- [ ] 4. **Smoke test GPU end-to-end** — nagranie testowe:
+- [x] 4. **Smoke test GPU end-to-end** — nagranie testowe:
       `~/Documents/Git/Echo/V20260314-170105.WAV` na popos (kopia na Macu:
       `samples/V20260314-170105.WAV`, katalog w `.gitignore`); upload przez API/UI,
       job transkrypcji kończy się sukcesem na `cuda` (float16), wynik zawiera segmenty
       z diarizacją; w logach brak fallbacków na CPU; po `docker compose down && up`
       modele nie pobierają się ponownie (volume działa).
-- [ ] 5. ⇄ **Dokumentacja** — README: sekcja „Development w Dockerze (serwer GPU)"
+- [x] 5. ⇄ **Dokumentacja** — README: sekcja „Development w Dockerze (serwer GPU)"
       (build, up, logi, testy, tunel); `docs/04_guides/serwer_gpu_popos.md`: workflow
       iteracji (Mac: `git push` → popos: `git pull`, compose restart nie jest potrzebny
       przy zmianach w `src/` dzięki `--reload`).
 
 ## Strumienie niezależne (równolegle ⇄)
 
-- [ ] ⇄ A. Krok 5 (dokumentacja) może iść równolegle z krokiem 4 (smoke test GPU) —
+- [x] ⇄ A. Krok 5 (dokumentacja) może iść równolegle z krokiem 4 (smoke test GPU) —
       po ukończeniu kroków 1–3, gdy kształt plików jest już ustalony.
 
 ## Strategia testów

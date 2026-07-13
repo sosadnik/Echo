@@ -128,6 +128,63 @@ ssh -L 8765:127.0.0.1:8765 user@pop-os-host
 
 Backend uruchamiasz normalnie na maszynie z GPU (`python3 -m echo_app.main`), a na Macu otwierasz `http://127.0.0.1:8765` w przeglądarce. Zdalny provider dla Maca bez tunelu i providerzy oparci o API to zakres kolejnego etapu.
 
+## Development w Dockerze (serwer GPU)
+
+Zamiast instalować ciężki pipeline bezpośrednio na serwerze z GPU (np. Pop!_OS + RTX 5070 Ti),
+wygodniej jest trzymać go w kontenerze — `Dockerfile` + `compose.yaml` w repo są przeznaczone
+**wyłącznie na maszynę z GPU**; Mac nadal pracuje natywnie z providerem `mock`. Dystrybucja
+końcowa (`portable exe`, patrz niżej) nie zmienia się — Docker służy tylko developmentowi.
+
+Build i start (na serwerze z GPU, w katalogu repo):
+
+```bash
+docker compose up -d --build
+```
+
+`compose.yaml` bind-mountuje repo do `/app` i uruchamia `uvicorn --reload`, więc edycja pliku
+w `src/echo_app/` na serwerze przeładowuje backend bez rebuildu obrazu. Rebuild obrazu
+(`--build`) jest potrzebny tylko po zmianie `Dockerfile`/`pyproject.toml`.
+
+Logi:
+
+```bash
+docker compose logs echo -f
+```
+
+Testy jednostkowe w kontenerze:
+
+```bash
+docker compose run --rm echo python3 -m unittest discover -s tests -v
+```
+
+Dostęp z Maca przez tunel SSH (API/UI kontenera nasłuchuje na `:8765` tak samo jak natywnie):
+
+```bash
+ssh -L 8765:127.0.0.1:8765 popos
+```
+
+Dane aplikacji (nagrania, SQLite, cache modeli w `HF_HOME`) trafiają do named volume
+`echo-data:/data` — przeżywają `docker compose down` i rebuild obrazu; usuwa je dopiero
+`docker compose down -v` albo `docker volume rm echo_echo-data`.
+
+Workflow iteracji kodu Mac → serwer GPU: `git push` na Macu, `git pull` na serwerze — `--reload`
+sam podłapie zmiany w `src/`, bez potrzeby restartu compose.
+
+### Pułapki napotkane przy pierwszym uruchomieniu
+
+- **`torchcodec is not available` przy diarizacji** — `torchcodec` (zależność `pyannote.audio`)
+  dynamicznie linkuje `libpython3.12.so.1.0`, której nie instaluje samo `python3`/`python3-venv`
+  na Ubuntu 24.04; `Dockerfile` doinstalowuje `libpython3.12t64` — jeśli błąd wróci po zmianie
+  bazowego obrazu, sprawdź `python3 -c "import torchcodec"` w kontenerze.
+- **Pobieranie modeli z Hugging Face potrafi się zawiesić** — klient `hf-xet` (szybki transfer
+  używany przez `huggingface_hub`) czasem dostaje `500` z `cas-server.xethub.hf.co` i zamiast
+  zgłosić błąd, wisi bez końca tuż przed ukończeniem pliku (proces w stanie `S`, 0% CPU/GPU).
+  Objaw: job utknięty na tym samym etapie/procencie na długo. Fix: `docker compose restart echo`
+  i ponów joba — modele zwykle dokańczają się przy kolejnej próbie.
+- **BuildKit/`buildx` nie jest zainstalowany domyślnie** — `Dockerfile` celowo nie używa
+  `--mount=type=cache`, żeby budować klasycznym builderem bez dodatkowych pakietów systemowych
+  na serwerze.
+
 ## Budowa `portable exe` na Windows
 
 Najprostszy i praktyczniejszy wariant to `one-folder`, nie `one-file`. Dla aplikacji desktopowej z assetami i późniejszym FFmpeg/modelami jest to zwykle mniej problematyczne.
