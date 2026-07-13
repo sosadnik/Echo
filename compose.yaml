@@ -1,0 +1,32 @@
+services:
+  echo:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - .:/app
+      - echo-data:/data
+    env_file:
+      - .env
+    environment:
+      ECHO_HOST: 0.0.0.0
+      ECHO_WHISPER_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - uvicorn
+      - echo_app.app:create_app
+      - --factory
+      - --reload
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8765"
+
+volumes:
+  echo-data:
