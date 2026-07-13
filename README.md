@@ -59,7 +59,7 @@ Wymaganie systemowe dla lokalnego pipeline:
 ffmpeg
 ```
 
-Lokalne modele:
+Lokalne modele (`faster-whisper`, `pyannote.audio`, `whisperx` do forced alignment):
 
 ```bash
 python3 -m pip install -e .[local]
@@ -82,10 +82,11 @@ python3 -m echo_app.launcher
 Najważniejsze zmienne środowiskowe:
 
 ```bash
-ECHO_WHISPER_MODEL=small
+ECHO_WHISPER_MODEL=large-v3-turbo
 ECHO_WHISPER_DEVICE=cpu
 ECHO_WHISPER_COMPUTE_TYPE=int8
 ECHO_DIARIZATION_MODEL=pyannote/speaker-diarization-community-1
+ECHO_PREPARE_FILTER_PRESET=full
 HF_TOKEN=...
 ```
 
@@ -106,11 +107,26 @@ Uwagi praktyczne:
 - nazwę nagrania można edytować bezpośrednio w karcie biblioteki; zmiana dotyczy wpisu w aplikacji, nie nazwy pliku na dysku
 - z poziomu UI można pobrać eksport `txt` z segmentami diarizacji; plik zawiera timestampy oraz nazwy speakerów ustawione lokalnie w UI
 - `.env` nadal jest dobrym miejscem na wartości startowe i `HF_TOKEN`
-- wejściowe audio jest przed obróbką czyszczone przez `ffmpeg` lekkim chainem pod mowę (`high-pass`, `low-pass`, lekkie `denoise`, umiarkowane wyrównanie poziomu) i zapisywane jako tymczasowy `wav` mono `16 kHz`, żeby `Whisper` i `pyannote` pracowały na stabilnym PCM
+- wejściowe audio jest przed obróbką czyszczone przez `ffmpeg`, chain sterowany presetem `ECHO_PREPARE_FILTER_PRESET`: `full` (domyślny, `high-pass` + `low-pass` + `denoise` + `speechnorm` + `limiter`), `light` (tylko `high-pass`/`low-pass`) albo `none` (bez czyszczenia, tylko konwersja do mono `wav` `16 kHz`); domyślny preset pozostaje `full` do czasu benchmarku na realnych nagraniach (krok 5 planu `01`)
+- word timestampy z `faster-whisper` przechodzą przez forced alignment (`whisperx`, model wav2vec2 dla polskiego); jeśli `whisperx` nie jest zainstalowany albo alignment się nie powiedzie, pipeline loguje ostrzeżenie i używa surowych timestampów z Whispera — transkrypcja nigdy nie pada przez błąd alignmentu
 - `faster-whisper` może pobrać model automatycznie przy pierwszym uruchomieniu.
 - `pyannote` może wymagać `HF_TOKEN`, jeśli model diarizacji jest pobierany z Hugging Face.
 - w spakowanym `exe` dane aplikacji i cache modeli trafiają do katalogu `data/` obok programu
 - docelowo można zamiast repo/model id wskazać lokalne katalogi modeli
+
+### Uwaga: Blackwell (RTX 50xx) i `compute_type`
+
+Na GPU z architekturą Blackwell (np. RTX 5070 Ti) `compute_type=int8` w CTranslate2 może się wywalać (crash) — bezpieczny domyślny wybór dla `ECHO_WHISPER_DEVICE=cuda` to `float16` (patrz `_default_compute_type` w `config.py`, ustawiane automatycznie gdy `ECHO_WHISPER_COMPUTE_TYPE` nie jest ustawione ręcznie). Wymaga `faster-whisper>=1.2` i CTranslate2 ≥ 4.5 (patrz [SubtitleEdit#10180](https://github.com/SubtitleEdit/subtitleedit/issues/10180)).
+
+### Praca przez tunel SSH (Pop!_OS + GPU, Mac jako klient)
+
+Etap 1 zakłada, że ciężki pipeline (`faster-whisper`, `pyannote`, `whisperx`) działa na maszynie z GPU (np. Pop!_OS + RTX 5070 Ti), a Mac korzysta z `Web UI` przez przeglądarkę po przekierowaniu portu:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 user@pop-os-host
+```
+
+Backend uruchamiasz normalnie na maszynie z GPU (`python3 -m echo_app.main`), a na Macu otwierasz `http://127.0.0.1:8765` w przeglądarce. Zdalny provider dla Maca bez tunelu i providerzy oparci o API to zakres kolejnego etapu.
 
 ## Budowa `portable exe` na Windows
 

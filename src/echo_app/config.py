@@ -95,7 +95,7 @@ def _read_provider() -> str:
 
 
 def _read_whisper_model() -> str:
-    return os.getenv("ECHO_WHISPER_MODEL", "small").strip() or "small"
+    return os.getenv("ECHO_WHISPER_MODEL", "large-v3-turbo").strip() or "large-v3-turbo"
 
 
 def _read_whisper_device() -> str:
@@ -122,6 +122,16 @@ def _read_diarization_device() -> str:
     if explicit:
         return explicit
     return _read_whisper_device()
+
+
+_PREPARE_FILTER_PRESETS = frozenset({"full", "light", "none"})
+
+
+def _read_prepare_filter_preset() -> str:
+    raw = os.getenv("ECHO_PREPARE_FILTER_PRESET", "full").strip().lower()
+    if raw not in _PREPARE_FILTER_PRESETS:
+        return "full"
+    return raw
 
 
 def _read_language_hint() -> str | None:
@@ -216,6 +226,7 @@ class AppSettings:
     whisper_compute_type: str = field(default_factory=_read_whisper_compute_type)
     diarization_model: str = field(default_factory=_read_diarization_model)
     diarization_device: str = field(default_factory=_read_diarization_device)
+    prepare_filter_preset: str = field(default_factory=_read_prepare_filter_preset)
     language_hint: str | None = field(default_factory=_read_language_hint)
     min_speakers: int | None = field(default_factory=lambda: _read_optional_int("ECHO_MIN_SPEAKERS"))
     max_speakers: int | None = field(default_factory=lambda: _read_optional_int("ECHO_MAX_SPEAKERS"))
@@ -288,7 +299,7 @@ class AppSettings:
         self.runtime_settings_path.write_text(f"{payload}\n", encoding="utf-8")
 
     def _normalize_runtime_settings(self) -> None:
-        self.whisper_model = _coerce_string(self.whisper_model, "small")
+        self.whisper_model = _coerce_string(self.whisper_model, "large-v3-turbo")
         self.whisper_device = _coerce_string(self.whisper_device, "cpu", lowercase=True)
         self.whisper_compute_type = _coerce_string(
             self.whisper_compute_type,
@@ -304,6 +315,13 @@ class AppSettings:
             self.whisper_device,
             lowercase=True,
         )
+        self.prepare_filter_preset = _coerce_string(
+            self.prepare_filter_preset,
+            "full",
+            lowercase=True,
+        )
+        if self.prepare_filter_preset not in _PREPARE_FILTER_PRESETS:
+            self.prepare_filter_preset = "full"
         self.language_hint = _coerce_optional_string(self.language_hint)
         self.min_speakers = _coerce_optional_int(self.min_speakers)
         self.max_speakers = _coerce_optional_int(self.max_speakers)

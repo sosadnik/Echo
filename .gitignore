@@ -38,6 +38,9 @@ pip-wheel-metadata/
 # Local runtime data
 data/
 
+# Local sample recordings (dev/smoke tests)
+samples/
+
 # Local media dropped in the repository root
 /*.wav
 /*.WAV

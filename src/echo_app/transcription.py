@@ -175,7 +175,9 @@ class LocalTranscriptionProvider:
     PREPARE_START = 4
     PREPARE_END = 12
     WHISPER_START = 14
-    WHISPER_END = 74
+    WHISPER_END = 64
+    ALIGNMENT_START = 66
+    ALIGNMENT_END = 74
     DIARIZATION_START = 76
     DIARIZATION_END = 96
     MERGE_START = 97
@@ -189,6 +191,9 @@ class LocalTranscriptionProvider:
         "speechnorm=e=3.5:r=0.0001:l=1,"
         "alimiter=limit=0.95"
     )
+    # "light" preset: keep only the frequency shaping, drop denoise/speechnorm/limiter
+    # (candidates that can distort speech on already-compressed dictaphone recordings).
+    PREPARE_AUDIO_FILTER_LIGHT = "highpass=f=90,lowpass=f=7600"
     PREPARE_FILTER_ERROR_MARKERS = (
         "No such filter",
         "Error initializing filter",
@@ -200,6 +205,7 @@ class LocalTranscriptionProvider:
         self.settings = settings
         self._whisper_model = None
         self._diarization_pipeline = None
+        self._aligner = None
 
     async def transcribe(self, recording_path: Path, progress: ProgressCallback | None = None) -> TranscriptResult:
         return await asyncio.to_thread(self._transcribe_sync, recording_path, progress)
@@ -219,6 +225,8 @@ class LocalTranscriptionProvider:
                 audio_duration,
                 progress,
             )
+            emit_progress(progress, "alignment", self.ALIGNMENT_START, "Alignment: dopasowywanie słów do audio.")
+            words = self._run_alignment(words, audio_path, recording_path.name, progress)
             emit_progress(progress, "diarization", self.DIARIZATION_START, "Diarizacja: start analizy speakerów.")
             speaker_turns = self._run_diarization(audio_path, recording_path.name, progress)
         emit_progress(progress, "merge", self.MERGE_START, "Scalanie segmentów i przygotowanie wyniku.")
@@ -257,7 +265,7 @@ class LocalTranscriptionProvider:
                         ffmpeg_path,
                         recording_path,
                         normalized_path,
-                        use_filters=True,
+                        filter_preset=self.settings.prepare_filter_preset,
                     )
                 )
             except subprocess.CalledProcessError as exc:
@@ -269,7 +277,7 @@ class LocalTranscriptionProvider:
                                 ffmpeg_path,
                                 recording_path,
                                 normalized_path,
-                                use_filters=False,
+                                filter_preset="none",
                             )
                         )
                     except subprocess.CalledProcessError as fallback_exc:
@@ -298,7 +306,7 @@ class LocalTranscriptionProvider:
         recording_path: Path,
         normalized_path: Path,
         *,
-        use_filters: bool,
+        filter_preset: str,
     ) -> list[str]:
         command = [
             ffmpeg_path,
@@ -309,8 +317,9 @@ class LocalTranscriptionProvider:
             str(recording_path),
             "-vn",
         ]
-        if use_filters:
-            command.extend(["-af", self.PREPARE_AUDIO_FILTER])
+        audio_filter = self._resolve_prepare_audio_filter(filter_preset)
+        if audio_filter:
+            command.extend(["-af", audio_filter])
         command.extend(
             [
                 "-ac",
@@ -324,12 +333,31 @@ class LocalTranscriptionProvider:
         )
         return command
 
+    def _resolve_prepare_audio_filter(self, filter_preset: str) -> str | None:
+        normalized = str(filter_preset or "").strip().lower()
+        if normalized == "light":
+            return self.PREPARE_AUDIO_FILTER_LIGHT
+        if normalized == "none":
+            return None
+        return self.PREPARE_AUDIO_FILTER
+
     def _run_prepare_command(self, command: list[str]) -> None:
         subprocess.run(command, check=True, capture_output=True, text=True)
 
     def _should_retry_prepare_without_filters(self, details: str) -> bool:
         normalized = str(details or "").strip()
         return any(marker in normalized for marker in self.PREPARE_FILTER_ERROR_MARKERS)
+
+    def _build_transcribe_kwargs(self) -> dict[str, object]:
+        transcribe_kwargs: dict[str, object] = {
+            "beam_size": 5,
+            "vad_filter": True,
+            "word_timestamps": True,
+            "condition_on_previous_text": False,
+        }
+        if self.settings.language_hint:
+            transcribe_kwargs["language"] = self.settings.language_hint
+        return transcribe_kwargs
 
     def _run_whisper(
         self,
@@ -339,14 +367,7 @@ class LocalTranscriptionProvider:
         progress: ProgressCallback | None = None,
     ) -> tuple[list[WordToken], str]:
         whisper_model = self._load_whisper_model()
-
-        transcribe_kwargs = {
-            "beam_size": 5,
-            "vad_filter": false,
-            "word_timestamps": True,
-        }
-        if self.settings.language_hint:
-            transcribe_kwargs["language"] = self.settings.language_hint
+        transcribe_kwargs = self._build_transcribe_kwargs()
 
         try:
             segments_iter, _ = whisper_model.transcribe(str(audio_path), **transcribe_kwargs)
@@ -391,6 +412,30 @@ class LocalTranscriptionProvider:
         transcript_text = " ".join(part for part in transcript_parts if part).strip()
         emit_progress(progress, "whisper", self.WHISPER_END, "Whisper: transkrypcja zakończona.")
         return words, transcript_text
+
+    def _run_alignment(
+        self,
+        words: list[WordToken],
+        audio_path: Path,
+        source_name: str,
+        progress: ProgressCallback | None = None,
+    ) -> list[WordToken]:
+        aligner = self._load_aligner()
+        aligned_words = aligner.align(words, audio_path, source_name)
+        emit_progress(progress, "alignment", self.ALIGNMENT_END, "Alignment: słowa dopasowane do audio.")
+        return aligned_words
+
+    def _load_aligner(self):
+        if self._aligner is not None:
+            return self._aligner
+
+        from .alignment import ForcedAligner
+
+        self._aligner = ForcedAligner(
+            device=self.settings.diarization_device,
+            language=self.settings.language_hint,
+        )
+        return self._aligner
 
     def _run_diarization(
         self,
