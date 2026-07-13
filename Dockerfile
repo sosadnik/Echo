@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
+        libpython3.12t64 \
         ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && python3 -m venv /opt/venv
