@@ -104,7 +104,7 @@ docker compose run --rm echo python3 -m unittest discover -s tests -v
 
 Zweryfikowane (2026-07-13): build, GPU (`torch.cuda.is_available()` → RTX 5070 Ti), health
 `:8765`, testy w kontenerze, auto-reload i pełny smoke test transkrypcji (60 min nagrania,
-`cuda`/`float16`, diarizacja, ~3 min) — patrz `docs/02_plans/active/02_docker_dev_gpu.md`.
+`cuda`/`float16`, diarizacja, ~3 min) — patrz `docs/02_plans/completed/02_docker_dev_gpu.md`.
 
 Napotkane pułapki:
 
