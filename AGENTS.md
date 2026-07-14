@@ -1,4 +1,4 @@
-<!-- agent-workflow:start version=1.0.0 -->
+<!-- agent-workflow:start version=1.0.1 -->
 # Echo — reguły pracy
 
 Projekt: **Echo** — aplikacja do przeglądu nagrań z dyktafonu (lokalny backend FastAPI + Web UI + pipeline faster-whisper/pyannote). Stack: **Python 3.11+ / FastAPI**.

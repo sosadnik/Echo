@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "workflow_version": "1.0.0",
+  "workflow_version": "1.0.1",
   "status": "current",
   "source": {
     "repository": "https://github.com/sosadnik/claude-workflow-kit.git",
@@ -25,7 +25,7 @@
     "implementer_agent": "code-implementer"
   },
   "managed_files": {
-    "CLAUDE.md": "4024b10c0106c28d59987e16a0ae16e7ee24f0e26745daf867e4422239f55c25",
+    "CLAUDE.md": "664d74797a1ef6c6aec6e6d4f603f799938a4d3f31821eec66ce2fc24c4d3342",
     ".claude/settings.json": "0b668c92edc953cde639962ebbde49559862ca12aa5ea243c65f7bdf246b4c64",
     ".claude/agents/solution-researcher.md": "77a31af9c29d2d225e6a466d1b5ffed7c84004ee98d13f3845a475a8cd716f7c",
     ".claude/agents/thorough-analyst.md": "4d4230b505e9b9caaff352469192f2977c72b316e517abef8a32e890eadde009",
@@ -39,7 +39,7 @@
     ".claude/skills/worklog-save/SKILL.md": "f15237b9e0ed31a81c488400b4ff75f481535cd1413ca4ffb97b4fe27852ed6b",
     ".claude/hooks/docs-guard.sh": "a777fc113c06669460274ee657e7308e5f79b90069726471fbf290171c1a4a19",
     ".claude/hooks/plan-reminder.sh": "f090e5a98661c3a36a589cb0a1cf392637a4899847ea60b9c1ab3dffeaa0eb18",
-    "AGENTS.md": "7e0054ed75e3e04390b03e81d5f9714a6843b56cd1b92b91900bcb4e5ab901d1",
+    "AGENTS.md": "f5291a87339dc4fe90d3ed8b86d62344d06de6bfc69bbd86d2e26a05f2b0575c",
     ".codex/hooks.json": "bdc28bd191d55fc39a52c23caf328f4843c837293f92f48c48c79a4dd93bb7a2",
     ".codex/agents/planner.toml": "172189dd70659f27f08d104370e2cfc31d03e771af13aa9a2c21953740597533",
     ".codex/agents/solution-researcher.toml": "5fdc0943f5581fe2a25c615d2b28b85540ee65e7abf4a7bad7fec6b6131c66c6",
