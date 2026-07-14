@@ -1,6 +1,6 @@
 ---
 name: debug
-description: Systematyczne debugowanie. Użyj przy KAŻDYM błędzie, nieprzechodzącym teście, nieoczekiwanym zachowaniu lub błędzie budowania — ZANIM zaproponujesz poprawkę. Wymusza znalezienie przyczyny źródłowej przed jakimkolwiek fixem, dowodzenie hipotez i test odtwarzający błąd. Uzupełnia pętlę analyze → plan-create → implement.
+description: Systematyczne debugowanie. Użyj przy KAŻDYM błędzie przed poprawką. Wymusza przyczynę źródłową i test odtwarzający; podczas verify cofa wadliwy plan do implementation przed zmianą kodu.
 ---
 
 # debug
@@ -16,6 +16,9 @@ marnują czas i tworzą nowe błędy; łatka na objaw maskuje prawdziwy problem.
 
 Jeśli nie ukończyłeś Fazy 1 — **nie wolno** proponować poprawek. Złamanie litery tej procedury
 jest złamaniem jej ducha.
+
+Jeśli błąd wykryto dla planu w `docs/02_plans/verification/`, przed zmianą kodu zapisz wynik
+weryfikacji, unieważnij zależne kontrole i przenieś plan do `docs/02_plans/implementation/`.
 
 ## Kiedy używać (i kiedy NIE pomijać)
 

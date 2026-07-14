@@ -1,11 +1,11 @@
 ---
 name: analyze
-description: Faza ANALIZY przed kodowaniem. Użyj, gdy trzeba ustalić jak rozwiązać problem, skąd bierze się błąd, w którą stronę rozwijać projekt albo jakie są sprawdzone wzorce (architektoniczne, podejścia profesjonalnych firm). Bada root-cause, zestawia podejścia z zaletami/wadami, wskazuje rekomendację i zapisuje raport analizy do docs/03_reports/. Pierwszy krok pętli: analyze → plan-create → implement.
+description: "Faza ANALIZY przed kodowaniem dla zadań złożonych lub architektonicznych. Bada root-cause, zestawia podejścia, wskazuje rekomendację i zapisuje raport do docs/03_reports/. Pierwszy krok pełnej pętli: analyze → plan-create → implement → verify."
 ---
 
 # analyze
 
-Faza **Analizy** w pętli pracy `analyze → plan-create → implement`. Cel: zanim napiszemy choć
+Faza **Analizy** w pętli pracy `analyze → plan-create → implement → verify`. Cel: zanim napiszemy choć
 linijkę kodu, ustalić **konkrety i sposób wykonania** — żeby plan i wdrożenie były świadome,
 a nie zgadywane.
 
@@ -16,6 +16,9 @@ zakończony jasną **rekomendacją**, którą podejmie `plan-create`.
 - „Skąd ten błąd / jaka jest przyczyna źródłowa?”
 - „Jak najlepiej rozwiązać X / w którą stronę rozwijać projekt?”
 - „Jakie są sprawdzone wzorce / jak robią to profesjonalne firmy?”
+
+Nie twórz raportu analizy dla zadania trywialnego, którego rozwiązanie jest oczywiste i lokalne.
+Dla standardowej zmiany wystarczą bezpośrednie ustalenia jako wejście do `plan-create`.
 
 ## Procedura
 

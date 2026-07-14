@@ -34,7 +34,7 @@ Etap 2 (zdalny provider dla Maca, providerzy API) — poza zakresem tego planu.
   - Blackwell/CTranslate2 (int8 crash → float16): https://github.com/SubtitleEdit/subtitleedit/issues/10180
   - pyannote community-1: https://huggingface.co/pyannote/speaker-diarization-community-1
 
-## Checklista (sekwencyjna)
+## Implementacja (sekwencyjna)
 
 - [x] 1. Fix bug `NameError`: wydzielić `_build_transcribe_kwargs()` w
       `LocalTranscriptionProvider`, poprawić `false` → poprawne wartości; docelowe kwargs:
@@ -93,3 +93,13 @@ wszystko na mockach, jak dotychczas w `test_transcription_prepare.py`).
 - Strumień A: test składania listy wariantów benchmarku (bez odpalania modeli).
 - Przypadki brzegowe: puste nagranie (words=[]), brak turn diarizacji, alignment zwraca
   mniej słów niż wejście (merge musi działać na tym, co jest).
+
+## Weryfikacja końcowa
+- [ ] Testy zakresowe dla zmiany
+- [ ] Pełny zestaw testów / build / lint / typecheck właściwy dla projektu
+- [ ] Kryteria akceptacji i istotne przypadki brzegowe
+- [ ] Dokumentacja jest zgodna z wdrożeniem
+- [ ] Brak znanych regresji i nierozwiązanych blockerów
+
+## Wynik weryfikacji
+Nie przeprowadzono.

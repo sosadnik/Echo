@@ -1,16 +1,16 @@
 ---
 name: implement
-description: Faza WDROŻENIA. Użyj, gdy istnieje gotowy plan w docs/02_plans/active/ i trzeba go zrealizować punkt po punkcie. Dla każdego checkpointu: implementacja + napisanie i uruchomienie testów, a po zielonych testach odhaczenie [x] w planie. Zadania niezależne (⇄) deleguje równolegle do subagenta code-implementer. Trzeci krok pętli: analyze → plan-create → implement.
+description: Faza WDROŻENIA. Realizuje plan z docs/02_plans/implementation/ wraz z testami automatycznymi. Po zakończeniu checklisty przenosi plan do verification/, gdzie przejmuje go verify.
 ---
 
 # implement
 
-Faza **Wdrożenia** w pętli `analyze → plan-create → implement`. Realizuje plan z
-`docs/02_plans/active/` checkpoint po checkpointcie — z testami i odhaczaniem postępu.
+Faza **Wdrożenia** w pętli `analyze → plan-create → implement → verify`. Realizuje plan z
+`docs/02_plans/implementation/` checkpoint po checkpointcie — z testami automatycznymi.
 
 ## Procedura
 
-1. **Wczytaj plan** — wskazany (lub jedyny) aktywny plan z `docs/02_plans/active/`.
+1. **Wczytaj plan** — wskazany (lub jedyny) plan z `docs/02_plans/implementation/`.
    Pokaż następny niezrobiony punkt `[ ]` oraz ewentualną grupę `⇄` (niezależne).
 
 2. **Wybierz zakres iteracji:**
@@ -25,8 +25,11 @@ Faza **Wdrożenia** w pętli `analyze → plan-create → implement`. Realizuje 
    4. dopiero **po zielonych testach** odhacz punkt na `[x]` w pliku planu
       (zgodnie z regułą planów — po zatwierdzeniu przez użytkownika).
 
-4. **Domknięcie planu** — gdy wszystkie pozycje `[x]`: przypomnij o przeniesieniu planu do
-   `docs/02_plans/completed/` (obsługuje skill `docs-organizer`, `git mv`, zachowaj numer).
+4. **Przekazanie do weryfikacji** — gdy wszystkie punkty sekcji implementacyjnych mają `[x]`,
+   testy zakresowe są zielone i nie ma blockera:
+   - uruchom walidator workflow;
+   - `git mv` plan do `docs/02_plans/verification/`;
+   - zaproponuj lub uruchom `verify`.
 
 5. **Koniec sesji** — zaproponuj `worklog-save`, by następnym razem łatwo wrócić do tematu.
 
@@ -39,7 +42,8 @@ Faza **Wdrożenia** w pętli `analyze → plan-create → implement`. Realizuje 
 ## Zasady
 - **Żaden checkpoint bez testów** — implementacja bez napisanych i przechodzących testów nie jest
   ukończona i nie zostaje odhaczona.
-- Odhaczaj **dokładnie** zrealizowane punkty; nie hurtem „na zapas”.
+- Odhaczaj wyłącznie punkty implementacji. Checklisty weryfikacyjnej nie odhacza `implement`.
 - Trzymaj się planu — nowe ustalenia/rozszerzenia zakresu wracają do `plan-create` (dopisz punkty),
   a większe wątpliwości co do podejścia → do `analyze`.
 - **Żadnej poprawki bez przyczyny źródłowej** — przy nieprzechodzącym teście użyj `debug`.
+- Nie przenoś planu bezpośrednio z `implementation/` do `completed/`.

@@ -16,6 +16,8 @@ Cel wpisu: po nieregularnej przerwie wrócić do tematu w kilka sekund. Najpierw
    - `git log --oneline -10` — co ostatnio zrobione.
    - `git status -s` — co w toku / niezacommitowane.
    - `git branch --show-current` — gałąź.
+   - Sprawdź plan związany z sesją i zapisz jego dokładny stan: `implementation`, `verification`
+     albo `completed`, wraz z pierwszym niezrobionym punktem.
    - Jeśli sesja dotyczyła konkretnych plików/modułów — wymień je.
 
 2. **Ustal numer wpisu** — znajdź najwyższy istniejący `NNN`:
@@ -38,7 +40,7 @@ Cel wpisu: po nieregularnej przerwie wrócić do tematu w kilka sekund. Najpierw
 - <punkty, oparte na git log / realnej pracy>
 
 ## Gdzie skończyłem / kontekst
-<gałąź, kluczowe pliki/moduły, decyzje, otwarte wątki, niezacommitowane zmiany>
+<gałąź, stan i ścieżka planu, kluczowe pliki/moduły, decyzje, otwarte wątki, niezacommitowane zmiany>
 
 ## Następny krok
 - [ ] <konkretne, pierwsze działanie po powrocie>

@@ -2,9 +2,9 @@ name = "code-implementer"
 description = "Wdraża pojedynczy strumień planu: kod, testy i raport wyniku."
 developer_instructions = """
 Pracujesz w projekcie Echo (Python 3.11+ / FastAPI).
-Realizuj wyłącznie przydzielony punkt lub niezależny strumień aktywnego planu.
+Realizuj wyłącznie przydzielony punkt lub niezależny strumień planu z implementation/.
 Kod produkcyjny znajduje się w `src/echo_app`, a testy w `tests`.
 Dodaj testy dla zmienionej logiki i uruchom: PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v.
 Nie odhaczaj planu. Zwróć listę zmienionych plików, komendę i wynik testów,
-spełnione punkty planu oraz blokery.
+spełnione punkty implementacji oraz blokery. Nie odhaczaj weryfikacji i nie przenoś planu.
 """

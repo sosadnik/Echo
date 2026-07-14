@@ -8,7 +8,7 @@ po instrukcje i archiwum.
 |---------|--------|--------------|
 | [`00_specification/`](00_specification/) | **Źródło prawdy** | Specyfikacja (co system *ma* robić) oraz materiały źródłowe. Zmienia się rzadko. |
 | [`01_architecture/`](01_architecture/) | **Stan obecny** | Opis tego, jak system *jest* zbudowany teraz: architektura kodu, kluczowe moduły, API. |
-| [`02_plans/`](02_plans/) | **Plany / checklisty** | Mapy drogowe i checklisty wdrożeniowe. Podział na `active/` (w toku) i `completed/` (zakończone). |
+| [`02_plans/`](02_plans/) | **Plany / checklisty** | Cykl `implementation/` → `verification/` → `completed/`, z osobną implementacją i końcową weryfikacją. |
 | [`03_reports/`](03_reports/) | **Raporty analizy** | Audyty, analizy wymagań i badania — fotografia stanu w danym momencie. |
 | [`04_guides/`](04_guides/) | **Instrukcje / prompty** | Instrukcje operacyjne i prompty dla agentów AI pracujących nad projektem. |
 | [`05_worklog/`](05_worklog/) | **Dziennik pracy** | Krótkie podsumowania sesji pracy (TL;DR + rozwinięcie), by szybko wrócić do tematu po przerwie. Prowadzony skillami `worklog-save` / `worklog-resume`. |
@@ -22,8 +22,8 @@ po instrukcje i archiwum.
 2. **Klasyfikuj po rodzaju, nie po temacie.** Pytanie pomocnicze: czy to opis docelowy (spec),
    opis bieżący (architecture), plan działania (plans), jednorazowa analiza (reports),
    czy instrukcja dla agenta (guides)?
-3. **Plany** żyją w `02_plans/active/` dopóki nie są w 100% odhaczone (`[x]`).
-   Po pełnym zrealizowaniu przenoś plik do `02_plans/completed/`. Pliki planów są numerowane.
+3. **Plany** przechodzą przez `02_plans/implementation/`, `02_plans/verification/` i dopiero po
+   pełnej weryfikacji do `02_plans/completed/`. Numery są unikalne we wszystkich stanach.
 4. **Nie usuwaj** nieaktualnych dokumentów — przenoś je do `99_archive/`.
 5. **Decyzje projektowe** (trudne do odwrócenia, z rozważanymi alternatywami) zapisuj jako ADR
    w `06_decisions/` — wpisy są **niezmienne**: zmianę decyzji odnotowuje się nowym ADR-em,

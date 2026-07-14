@@ -1,12 +1,12 @@
 ---
 name: plan-create
-description: Faza PLANU. Użyj po analizie (skill analyze), gdy znasz już sposób wykonania i trzeba zamienić go na wykonalny plan. Tworzy plan w docs/02_plans/active/ z numerem NN_, zawierający kontekst (po co), cel końcowy, referencje oraz checklistę z zachowaną kolejnością lub oznaczeniem zadań niezależnych (⇄) do podziału na subagentów, plus strategię testów. Drugi krok pętli: analyze → plan-create → implement.
+description: "Faza PLANU. Użyj po analizie, aby utworzyć plan w docs/02_plans/implementation/ z osobnymi checklistami implementacji i końcowej weryfikacji. Drugi krok pętli: analyze → plan-create → implement → verify."
 ---
 
 # plan-create
 
-Faza **Planu** w pętli `analyze → plan-create → implement`. Zamienia ustalone podejście
-(z raportu `analyze` lub bezpośrednich ustaleń) w **wykonalny plan** w `docs/02_plans/active/`.
+Faza **Planu** w pętli `analyze → plan-create → implement → verify`. Zamienia ustalone podejście
+w **wykonalny plan** w `docs/02_plans/implementation/`.
 
 Plan ma pozwolić skupić się w fazie wdrożenia na samym wykonaniu — dlatego musi nieść pełny
 kontekst, cel, referencje i jednoznaczną kolejność/niezależność zadań.
@@ -23,10 +23,10 @@ kontekst, cel, referencje i jednoznaczną kolejność/niezależność zadań.
    - **sekwencyjne** (zależne od poprzednich) — numerowana checklista w kolejności;
    - **niezależne** (bez zależności) — oznaczone `⇄`, do równoległego podziału na subagentów.
 
-4. **Numer planu** — kolejny wolny `NN_` w `docs/02_plans/active/`
-   (`ls docs/02_plans/active/ | grep -E '^[0-9]{2}_' | sort | tail -1`, +1).
+4. **Numer planu** — kolejny wolny `NN_` ze wszystkich stanów. Użyj:
+   `python3 .codex/hooks/workflow-check.py --project-root . --next-plan-number`.
 
-5. **Zapisz** `docs/02_plans/active/NN_<temat>.md` wg szablonu poniżej.
+5. **Zapisz** `docs/02_plans/implementation/NN_<temat>.md` wg szablonu poniżej.
 
 6. **Zakończ** — zaproponuj `implement`.
 
@@ -42,13 +42,17 @@ docs/03_reports/..._analiza.md>
 ## Cel końcowy / Definicja ukończenia
 <mierzalny stan „gotowe” — po czym poznamy, że zadanie zrealizowane>
 
+## Status operacyjny
+normalny
+<!-- Dla blokady: zablokowany — <powód>. Dla anulowania/zastąpienia przenieś do 99_archive/. -->
+
 ## Referencje
 - Spec: `docs/00_specification/...` (konkretne fragmenty)
 - Architektura: `docs/01_architecture/...`
 - Kod: `src/echo_app`
 - Zewnętrzne: <linki istotne do poprawnego wykonania>
 
-## Checklista (sekwencyjna)
+## Implementacja (sekwencyjna)
 - [ ] 1. <krok zależny od porządku>
 - [ ] 2. <krok>
 - [ ] 3. <krok>
@@ -57,17 +61,30 @@ docs/03_reports/..._analiza.md>
 <sekcja opcjonalna — tylko gdy są zadania bez wzajemnych zależności;
 każdy strumień może iść do osobnego subagenta code-implementer>
 - [ ] ⇄ A. <niezależne zadanie>
-- [ ] ⇄ B. <niezależne zadanie>
+  - Zakres plików/modułów: …
+  - Zależności i kontrakt wejścia/wyjścia: …
+  - Kryterium scalenia: …
+- [ ] ⇄ B. <niezależne zadanie wraz z tymi samymi polami>
 
-## Strategia testów
-<co testujemy dla każdego strumienia i jak uruchomić — `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v`;
-jakie przypadki brzegowe muszą być pokryte>
+## Weryfikacja końcowa
+- [ ] Testy zakresowe dla zmiany: `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v`
+- [ ] Pełny zestaw testów / build / lint / typecheck właściwy dla projektu
+- [ ] Kryteria akceptacji i istotne przypadki brzegowe
+- [ ] Dokumentacja i opis architektury są zgodne z wdrożeniem
+- [ ] Brak znanych regresji i nierozwiązanych blockerów
+
+## Wynik weryfikacji
+<!-- Wypełnia verify: data, dokładne komendy, wyniki, testy manualne/E2E i ograniczenia. -->
+Nie przeprowadzono.
 ```
 
 ## Zasady
 - **Każda** sekcja obowiązkowa musi być wypełniona — plan bez kontekstu/celu/referencji jest
   niekompletny.
-- Markery `[ ]` — pojedyncze, atomowe checkpointy; w fazie `implement` odhaczane na `[x]`.
+- Punkty implementacji obejmują kod oraz testy automatyczne zmienionej logiki.
+- Punkty weryfikacji odhacza dopiero `verify`, zapisując dowody w sekcji wyniku.
 - `⇄` oznacza „można robić niezależnie/równolegle” — to wskazówka do podziału na subagentów.
-- Plan żyje w `active/` aż wszystkie pozycje będą `[x]`, wtedy `docs-organizer` przenosi go do
-  `completed/`.
+- Nie oznaczaj `⇄`, jeśli strumienie zmieniają te same pliki, wspólne API lub migrację bez
+  ustalonego kontraktu i kolejności scalenia.
+- `implement` przenosi gotowy plan do `verification/`; `verify` przenosi zweryfikowany plan do
+  `completed/`. Nie pomijaj żadnego stanu.

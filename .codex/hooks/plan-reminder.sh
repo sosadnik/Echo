@@ -20,9 +20,16 @@ while IFS= read -r fp; do
     */tests/*|tests/*) continue ;;
   esac
 
-  msg="Przypomnienie (proces): zmieniono kod produkcyjny. Napisz i uruchom testy "
-  msg+="(\`PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v\`), a po zielonym wyniku odhacz właściwy punkt w "
-  msg+="docs/02_plans/active/. Na koniec sesji rozważ skill 'worklog-save'."
+  if find docs/02_plans/verification -maxdepth 1 -type f -name '*.md' -print -quit 2>/dev/null \
+    | grep -q .; then
+    msg="Uwaga (stan planu): zmieniono kod produkcyjny, gdy istnieje plan w verification/. "
+    msg+="Wynik weryfikacji jest nieważny: przenieś właściwy plan do implementation/, "
+    msg+="przywróć [ ] dla zależnych kontroli i użyj debug."
+  else
+    msg="Przypomnienie (proces): zmieniono kod produkcyjny. Dodaj i uruchom testy zakresowe "
+    msg+="(\`PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v\`), a po zielonym wyniku odhacz właściwy punkt w "
+    msg+="docs/02_plans/implementation/."
+  fi
   jq -n --arg m "$msg" '{hookSpecificOutput:{hookEventName:"PostToolUse",additionalContext:$m}}'
   exit 0
 done <<< "$paths"

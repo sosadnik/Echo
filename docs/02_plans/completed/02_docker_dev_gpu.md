@@ -40,7 +40,7 @@ Na serwerze popos `docker compose up` buduje i uruchamia Echo tak, że:
   GPU w Compose (https://docs.docker.com/compose/how-tos/gpu-support/),
   wymagania Blackwell (https://github.com/pluja/whishper/issues/172)
 
-## Checklista (sekwencyjna)
+## Implementacja (sekwencyjna)
 
 - [x] 1. **`Dockerfile` + `.dockerignore`** — baza `nvidia/cuda:12.8.*-cudnn-runtime-ubuntu24.04`;
       apt: `python3`, `python3-pip`, `python3-venv`, `ffmpeg`; instalacja `-e .[local]`
@@ -92,3 +92,10 @@ Na serwerze popos `docker compose up` buduje i uruchamia Echo tak, że:
 - **Przypadki brzegowe**: brak `HF_TOKEN` w `.env` (czytelny błąd joba diarizacji, nie crash
   backendu); restart kontenera w trakcie joba (job w stanie failed/pending po powrocie,
   backend wstaje czysto).
+
+## Weryfikacja końcowa (migracja legacy)
+- [x] Zachowano historyczny status planu ukończonego przed workflow 1.1.
+
+## Wynik weryfikacji
+Migracja workflow 1.1: plan był już w `completed/`. Nie wykonywano ponownie historycznych
+kontroli; obowiązują dowody i wyniki zapisane wcześniej w tym planie oraz historii repozytorium.

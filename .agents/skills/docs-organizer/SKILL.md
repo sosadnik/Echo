@@ -37,7 +37,8 @@ Rozróżnienie graniczne: `01_architecture` = stan trwały i aktualny; `03_repor
 ### Klasyfikacja nowego dokumentu
 1. Ustal rodzaj wg tabeli powyżej (zadaj pytanie kwalifikujące).
 2. Umieść plik w odpowiednim katalogu — **nigdy bezpośrednio w `docs/`** (jedyny dozwolony plik w korzeniu to `docs/README.md`).
-3. Jeśli to **plan**: nadaj numeryczny prefiks (kolejny wolny `NN_`) i umieść w `02_plans/active/`.
+3. Jeśli to **plan**: nadaj globalnie unikalny prefiks `NN_`, sprawdzając `implementation/`,
+   `verification/` i `completed/`, następnie umieść go w `02_plans/implementation/`.
 
 ### Przenoszenie istniejącego pliku
 - Zawsze `git mv` (zachowaj historię). Dla plików nieśledzonych zwykłe `mv`.
@@ -45,8 +46,13 @@ Rozróżnienie graniczne: `01_architecture` = stan trwały i aktualny; `03_repor
   (`grep -rn 'stara/ścieżka' docs`).
 
 ### Cykl życia planu
-- Plan z choć jedną pozycją `[ ]` → `02_plans/active/`.
-- Plan z wszystkimi pozycjami `[x]` → przenieś do `02_plans/completed/` (zachowaj numer).
+- Niedokończona implementacja → `02_plans/implementation/`.
+- Implementacja zakończona, końcowe kontrole jeszcze trwają → `02_plans/verification/`.
+- Wszystkie checkboxy `[x]` i zapisane dowody kontroli → `02_plans/completed/`.
+- Defekt wymagający zmiany kodu podczas weryfikacji → cofnij plan do `implementation/`.
+- Nigdy nie pomijaj `verification/` i nie zmieniaj kodu produkcyjnego, pozostawiając plan w tym stanie.
+- Plan zablokowany pozostaje w bieżącym stanie z opisem blokera. Anulowany lub zastąpiony przenieś
+  do `99_archive/`, wskazując powód/następcę.
 
 ### Wycofywanie
 - Nieaktualnego dokumentu **nie usuwaj** — przenieś do `99_archive/`.
@@ -56,3 +62,4 @@ Rozróżnienie graniczne: `01_architecture` = stan trwały i aktualny; `03_repor
   `find docs -maxdepth 1 -name '*.md' ! -name 'README.md'` (powinno być puste).
 - Brak zwisających odwołań do starych ścieżek (`grep` jak wyżej).
 - Każdy katalog kategorii ma `README.md`.
+- Uruchom walidator workflow i usuń wszystkie zgłoszone niespójności.
