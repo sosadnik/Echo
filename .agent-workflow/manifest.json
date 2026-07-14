@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "workflow_version": "1.0.0",
+  "status": "current",
+  "source": {
+    "repository": "https://github.com/sosadnik/claude-workflow-kit.git",
+    "ref": "master"
+  },
+  "targets": [
+    "claude",
+    "codex"
+  ],
+  "config": {
+    "project_name": "Echo",
+    "project_desc": "aplikacja do przeglądu nagrań z dyktafonu (lokalny backend FastAPI + Web UI + pipeline faster-whisper/pyannote)",
+    "lang": "polski",
+    "stack": "Python 3.11+ / FastAPI",
+    "test_cmd": "PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v",
+    "src_dirs": [
+      "src/echo_app"
+    ],
+    "test_dirs": [
+      "tests"
+    ],
+    "implementer_agent": "code-implementer"
+  },
+  "managed_files": {
+    "CLAUDE.md": "4024b10c0106c28d59987e16a0ae16e7ee24f0e26745daf867e4422239f55c25",
+    ".claude/settings.json": "0b668c92edc953cde639962ebbde49559862ca12aa5ea243c65f7bdf246b4c64",
+    ".claude/agents/solution-researcher.md": "77a31af9c29d2d225e6a466d1b5ffed7c84004ee98d13f3845a475a8cd716f7c",
+    ".claude/agents/thorough-analyst.md": "4d4230b505e9b9caaff352469192f2977c72b316e517abef8a32e890eadde009",
+    ".claude/agents/code-implementer.md": "6a8e1bbbc1b1fa7ee9cc68cc768382a16ff88895224cf40013ac69c95f3b6f79",
+    ".claude/skills/analyze/SKILL.md": "2094b20a85519b4ed10083f928966a39b426efc87324c2b80d42f36c1d82a55d",
+    ".claude/skills/debug/SKILL.md": "c2bdb37bc1c1448921d584a90870dfa060d86614cfc8cdc90d21c923482ffc8f",
+    ".claude/skills/docs-organizer/SKILL.md": "87c3e8c9e276b85093e3bf3353393ff0165869516d2e63c68fe813ae2f16c489",
+    ".claude/skills/implement/SKILL.md": "8e1f761fab448239ac0b195b9cd07bcf2ae26fc3abb0bf42b520110505fcb7e3",
+    ".claude/skills/plan-create/SKILL.md": "477ca714aea7e0bfcb4e7e16e3be390e94819746c4499086717752b5c392f484",
+    ".claude/skills/worklog-resume/SKILL.md": "b777a1acf5fad60b26d9ca4fc7bf0adca9f1079f890e421fff231a62fb5d77d9",
+    ".claude/skills/worklog-save/SKILL.md": "f15237b9e0ed31a81c488400b4ff75f481535cd1413ca4ffb97b4fe27852ed6b",
+    ".claude/hooks/docs-guard.sh": "a777fc113c06669460274ee657e7308e5f79b90069726471fbf290171c1a4a19",
+    ".claude/hooks/plan-reminder.sh": "f090e5a98661c3a36a589cb0a1cf392637a4899847ea60b9c1ab3dffeaa0eb18",
+    "AGENTS.md": "7e0054ed75e3e04390b03e81d5f9714a6843b56cd1b92b91900bcb4e5ab901d1",
+    ".codex/hooks.json": "bdc28bd191d55fc39a52c23caf328f4843c837293f92f48c48c79a4dd93bb7a2",
+    ".codex/agents/planner.toml": "172189dd70659f27f08d104370e2cfc31d03e771af13aa9a2c21953740597533",
+    ".codex/agents/solution-researcher.toml": "5fdc0943f5581fe2a25c615d2b28b85540ee65e7abf4a7bad7fec6b6131c66c6",
+    ".codex/agents/thorough-analyst.toml": "f4b28e9c1e43cf8cf38343929eb3ee7be7c309070c3bde7c173c3cb4337e480d",
+    ".codex/agents/code-implementer.toml": "c9a48e9ce1620853dcef1107596c239d441216fc586f5f13535fbf5b35d0d5d0",
+    ".agents/skills/analyze/SKILL.md": "c68ad700693c0fa33b14c47e901e6ffeac7b609e19e40c084fdd73b45015d189",
+    ".agents/skills/debug/SKILL.md": "a83d868ebf9101762dbc3ce5cdf6aaef7f0205d0a5e68299d76ffe3b33ef3146",
+    ".agents/skills/docs-organizer/SKILL.md": "87c3e8c9e276b85093e3bf3353393ff0165869516d2e63c68fe813ae2f16c489",
+    ".agents/skills/implement/SKILL.md": "8e1f761fab448239ac0b195b9cd07bcf2ae26fc3abb0bf42b520110505fcb7e3",
+    ".agents/skills/plan-create/SKILL.md": "e5724695668cf38c17787c24c905ad696406270c050b35f9305612cc055c2397",
+    ".agents/skills/worklog-resume/SKILL.md": "b777a1acf5fad60b26d9ca4fc7bf0adca9f1079f890e421fff231a62fb5d77d9",
+    ".agents/skills/worklog-save/SKILL.md": "f15237b9e0ed31a81c488400b4ff75f481535cd1413ca4ffb97b4fe27852ed6b",
+    ".codex/hooks/docs-guard.sh": "a777fc113c06669460274ee657e7308e5f79b90069726471fbf290171c1a4a19",
+    ".codex/hooks/plan-reminder.sh": "f090e5a98661c3a36a589cb0a1cf392637a4899847ea60b9c1ab3dffeaa0eb18"
+  }
+}
