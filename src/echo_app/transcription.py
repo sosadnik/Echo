@@ -194,6 +194,17 @@ class LocalTranscriptionProvider:
     # "light" preset: keep only the frequency shaping, drop denoise/speechnorm/limiter
     # (candidates that can distort speech on already-compressed dictaphone recordings).
     PREPARE_AUDIO_FILTER_LIGHT = "highpass=f=90,lowpass=f=7600"
+    # Quiet/mumbled dictaphone speech sits right at the default VAD threshold (0.5) decision
+    # boundary, where non-deterministic CUDA kernel rounding (float16 and float32 alike) can
+    # flip "speech"/"silence" between otherwise identical runs (verified 2026-07-18: same file
+    # + settings produced 2-23 segments across repeated runs). A lower threshold moves the
+    # decision away from that boundary, which both recovers real speech the default threshold
+    # dropped and makes detection deterministic run-to-run.
+    VAD_PARAMETERS = {
+        "threshold": 0.2,
+        "min_silence_duration_ms": 1000,
+        "speech_pad_ms": 600,
+    }
     PREPARE_FILTER_ERROR_MARKERS = (
         "No such filter",
         "Error initializing filter",
@@ -352,6 +363,7 @@ class LocalTranscriptionProvider:
         transcribe_kwargs: dict[str, object] = {
             "beam_size": 5,
             "vad_filter": True,
+            "vad_parameters": dict(self.VAD_PARAMETERS),
             "word_timestamps": True,
             "condition_on_previous_text": False,
         }

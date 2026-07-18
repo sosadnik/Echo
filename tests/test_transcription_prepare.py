@@ -221,6 +221,24 @@ class BuildTranscribeKwargsTests(unittest.TestCase):
         self.assertIs(kwargs["condition_on_previous_text"], False)
         self.assertEqual(kwargs["language"], "pl")
 
+    def test_build_transcribe_kwargs_uses_permissive_vad_threshold(self) -> None:
+        # Domyslny prog VAD faster-whisper (0.5) lezy na granicy decyzyjnej dla cichej,
+        # mamrotanej mowy z dyktafonu -> niedeterminizm kerneli CUDA (float16 i float32)
+        # losowo przechyla decyzje "mowa"/"cisza" miedzy identycznymi przebiegami (patrz
+        # docs/03_reports z 2026-07-18: 3x ten sam plik i ustawienia -> 2-23 segmentow).
+        # Nizszy prog przesuwa decyzje z granicy: eliminuje niedeterminizm i wykrywa
+        # realna mowe, ktora domyslny prog gubil.
+        settings = AppSettings()
+        provider = LocalTranscriptionProvider(settings)
+
+        kwargs = provider._build_transcribe_kwargs()
+
+        self.assertIn("vad_parameters", kwargs)
+        vad_parameters = kwargs["vad_parameters"]
+        self.assertEqual(vad_parameters["threshold"], 0.2)
+        self.assertEqual(vad_parameters["min_silence_duration_ms"], 1000)
+        self.assertEqual(vad_parameters["speech_pad_ms"], 600)
+
     def test_build_transcribe_kwargs_omits_language_when_no_hint(self) -> None:
         settings = AppSettings()
         settings.language_hint = None
