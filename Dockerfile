@@ -18,10 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md constraints-gpu.txt ./
 COPY src ./src
+COPY scripts ./scripts
 
-RUN pip install --extra-index-url https://download.pytorch.org/whl/cu128 -e ".[local]"
+RUN pip install --extra-index-url https://download.pytorch.org/whl/cu128 -c constraints-gpu.txt -e ".[local]"
 
 EXPOSE 8765
 

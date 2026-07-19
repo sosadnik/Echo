@@ -5,8 +5,10 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from importlib import metadata
 from pathlib import Path
+import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from typing import Callable, Iterator, Protocol
@@ -282,6 +284,7 @@ class LocalTranscriptionProvider:
         self._whisper_model = None
         self._diarization_pipeline = None
         self._aligner = None
+        self.vad_parameters = dict(self.VAD_PARAMETERS)
 
     async def transcribe(self, recording_path: Path, progress: ProgressCallback | None = None) -> TranscriptResult:
         return await asyncio.to_thread(self._transcribe_sync, recording_path, progress)
@@ -300,9 +303,13 @@ class LocalTranscriptionProvider:
             timings["prepare"] = StageTiming(seconds=time.perf_counter() - prepare_started)
             audio_duration = self._read_wav_duration(audio_sources.neutral_path)
             emit_progress(progress, "whisper", self.WHISPER_START, "Whisper: start transkrypcji i timestampów.")
+            whisper_cold_start = self._whisper_model is None
             load_started = time.perf_counter()
             self._load_whisper_model()
-            timings["whisper_load"] = StageTiming(seconds=time.perf_counter() - load_started, cold_start=True)
+            timings["whisper_load"] = StageTiming(
+                seconds=time.perf_counter() - load_started,
+                cold_start=whisper_cold_start,
+            )
             asr_started = time.perf_counter()
             asr_result = self._run_whisper(
                 audio_sources.asr_path,
@@ -382,6 +389,9 @@ class LocalTranscriptionProvider:
                 versions[package] = metadata.version(package)
             except metadata.PackageNotFoundError:
                 continue
+        commit = self._read_app_commit()
+        if commit:
+            versions["echo_commit"] = commit
         total_seconds = timings["total"].seconds
         return PipelineManifest(
             backend=self.name,
@@ -390,7 +400,7 @@ class LocalTranscriptionProvider:
                 "alignment_enabled": self.settings.alignment_enabled,
                 "asr_filter_preset": self.settings.asr_filter_preset,
                 "diarization_filter_preset": self.settings.diarization_filter_preset,
-                "vad_parameters": dict(self.VAD_PARAMETERS),
+                "vad_parameters": dict(self.vad_parameters),
                 "diarization_strict": self.settings.diarization_strict,
                 "speaker_overlap_threshold_seconds": self.settings.speaker_overlap_threshold_seconds,
             },
@@ -402,7 +412,47 @@ class LocalTranscriptionProvider:
             word_counts={"asr": len(words), "aligned": sum(word.aligned for word in words)},
             audio_duration_seconds=audio_duration or None,
             realtime_factor=(total_seconds / audio_duration) if audio_duration > 0 else None,
+            hardware=self._collect_hardware(),
         )
+
+    def _read_app_commit(self) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--short=12", "HEAD"],
+                cwd=Path(__file__).resolve().parents[2],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return result.stdout.strip() or None
+
+    def _collect_hardware(self) -> dict[str, str | int | float]:
+        hardware: dict[str, str | int | float] = {
+            "platform": platform.platform(),
+            "processor": platform.processor() or "unknown",
+        }
+        try:
+            import resource
+
+            peak_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # Linux reports KiB, macOS bytes.
+            divisor = 1024 * 1024 if sys.platform == "darwin" else 1024
+            hardware["peak_ram_mb"] = round(float(peak_rss) / divisor, 2)
+        except (ImportError, OSError, ValueError):
+            pass
+        try:
+            import torch
+
+            hardware["torch_cuda"] = str(torch.version.cuda or "unavailable")
+            if torch.cuda.is_available():
+                hardware["gpu"] = str(torch.cuda.get_device_name(0))
+                hardware["peak_vram_mb"] = round(torch.cuda.max_memory_allocated(0) / (1024 * 1024), 2)
+        except (ImportError, RuntimeError):
+            pass
+        return hardware
 
     @contextmanager
     def _prepare_audio_source(
@@ -525,7 +575,7 @@ class LocalTranscriptionProvider:
         transcribe_kwargs: dict[str, object] = {
             "beam_size": 5,
             "vad_filter": True,
-            "vad_parameters": dict(self.VAD_PARAMETERS),
+            "vad_parameters": dict(self.vad_parameters),
             "word_timestamps": True,
             "condition_on_previous_text": False,
         }

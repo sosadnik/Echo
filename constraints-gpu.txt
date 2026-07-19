@@ -1,0 +1,6 @@
+# Wersje zweryfikowane 2026-07-19 na RTX 5070 Ti / CUDA 12.8.1.
+faster-whisper==1.2.1
+pyannote.audio==4.0.7
+whisperx==3.8.6
+torch==2.8.0+cu128
+ctranslate2==4.8.1

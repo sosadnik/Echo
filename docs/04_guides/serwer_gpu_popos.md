@@ -100,11 +100,17 @@ docker compose up -d --build      # (re)build + start
 docker compose logs echo -f       # logi na żywo
 docker compose down               # stop (named volume echo-data przeżywa)
 docker compose run --rm echo python3 -m unittest discover -s tests -v
+docker compose --profile tools run --rm gpu-preflight
 ```
 
 Zweryfikowane (2026-07-13): build, GPU (`torch.cuda.is_available()` → RTX 5070 Ti), health
 `:8765`, testy w kontenerze, auto-reload i pełny smoke test transkrypcji (60 min nagrania,
 `cuda`/`float16`, diarizacja, ~3 min) — patrz `docs/02_plans/completed/02_docker_dev_gpu.md`.
+
+Wersje stosu zweryfikowane ponownie 2026-07-19 są przypięte w `constraints-gpu.txt`.
+Preflight sprawdza CUDA, ffmpeg, co najmniej 5 GiB wolnego miejsca, katalog modeli i
+obecność wszystkich wymaganych bibliotek. Stały serwer wiąże port wyłącznie do
+`127.0.0.1`; `--reload` występuje tylko w jawnym `compose.dev.yaml`.
 
 Napotkane pułapki:
 

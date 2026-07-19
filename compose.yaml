@@ -26,5 +26,21 @@ services:
       timeout: 5s
       retries: 3
 
+  gpu-preflight:
+    profiles: ["tools"]
+    build: .
+    volumes:
+      - echo-data:/data
+    environment:
+      ECHO_WHISPER_DEVICE: cuda
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ["python3", "scripts/preflight_gpu.py", "--models-dir", "/data/echo/models"]
+
 volumes:
   echo-data:

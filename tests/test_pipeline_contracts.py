@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from echo_app.repository import EchoRepository
 from echo_app.config import AppSettings
@@ -61,15 +62,21 @@ class PipelineContractTests(unittest.TestCase):
     def test_manifest_has_timing_and_never_serializes_hf_token(self) -> None:
         settings = AppSettings(huggingface_token="hf_private_secret")
         provider = LocalTranscriptionProvider(settings)
-        manifest = provider._build_manifest(
-            audio_duration=2.0,
-            timings={"total": StageTiming(seconds=1.0)},
-            warnings=[PipelineWarning(code="fallback", message="test")],
-            words=[WordToken(start=0, end=1, text="test")],
-        )
+        with (
+            patch.object(provider, "_collect_hardware", return_value={"gpu": "RTX test", "peak_vram_mb": 123}),
+            patch.object(provider, "_read_app_commit", return_value="abc123"),
+        ):
+            manifest = provider._build_manifest(
+                audio_duration=2.0,
+                timings={"total": StageTiming(seconds=1.0)},
+                warnings=[PipelineWarning(code="fallback", message="test")],
+                words=[WordToken(start=0, end=1, text="test")],
+            )
 
         self.assertEqual(manifest.realtime_factor, 0.5)
         self.assertEqual(manifest.word_counts, {"asr": 1, "aligned": 1})
+        self.assertEqual(manifest.hardware["gpu"], "RTX test")
+        self.assertEqual(manifest.library_versions["echo_commit"], "abc123")
         self.assertNotIn("hf_private_secret", manifest.model_dump_json())
 
     def test_legacy_minimal_result_json_still_exposes_segments(self) -> None:

@@ -153,7 +153,7 @@ normalny
   - Testy: deterministyczny manifest z mockowanym zegarem/sprzętem, zgodność starego
     joba bez metadanych oraz brak sekretów/tokenów w payloadzie.
 
-- [ ] 9. Przebudować harness benchmarkowy na `benchmark-artifact/v1`.
+- [x] 9. Przebudować harness benchmarkowy na `benchmark-artifact/v1`.
   - Naprawdę zastosować model, filtry, VAD, alignment on/off i liczbę powtórzeń z
     wariantu; nie sterować niewspieranymi zmiennymi środowiskowymi.
   - Reużywać provider/model w obrębie wariantu; raportować osobno cold load,
@@ -167,7 +167,7 @@ normalny
   - Testy: macierz wariantów, reuse/warm-up, trzy powtórzenia, partial failure,
     wznowienie/ponowienie, zgodność schematu i bezpieczne nazwy/ścieżki.
 
-- [ ] 10. Rozszerzyć metryki i reguły porównania.
+- [x] 10. Rozszerzyć metryki i reguły porównania.
   - Liczyć normalized/raw WER, CER i osobno substitutions/deletions/insertions.
   - Dodać hallucination/false-speech na oznaczonych fragmentach ciszy oraz recall
     ręcznie oznaczonych wypowiedzi.
