@@ -177,7 +177,7 @@ normalny
   - Testy metryk na małych ręcznie policzonych przykładach, permutacji speakerów,
     overlapie i pustej referencji.
 
-- [ ] 11. Wykonać kontrolny benchmark obecnego pipeline'u.
+- [x] 11. Wykonać kontrolny benchmark obecnego pipeline'u.
   - Przygotować lokalny manifest dla minimum: cicha mowa, normalna rozmowa, szum,
     cisza, szybka zmiana speakerów i overlap; nie commitować prywatnego audio.
   - Uruchomić na Pop!_OS co najmniej `large-v3` i `large-v3-turbo`, alignment on/off
@@ -189,7 +189,7 @@ normalny
 
 ## Strumienie niezależne (równolegle ⇄)
 
-- [ ] ⇄ A. Utwardzić sposób uruchamiania instancji GPU.
+- [x] ⇄ A. Utwardzić sposób uruchamiania instancji GPU.
   - Zakres plików/modułów: `compose.yaml`, opcjonalny override dev, `Dockerfile`,
     `.env.example`, constraints/lock środowiska GPU, przewodnik Pop!_OS.
   - Zależności i kontrakt wejścia/wyjścia: nie zmienia kontraktu pipeline'u;

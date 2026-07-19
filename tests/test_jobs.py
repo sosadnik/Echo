@@ -34,7 +34,7 @@ class NeverCompletesProvider:
 
 
 class JobRunnerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_single_worker_runs_fifo_and_keeps_second_job_queued(self) -> None:
+    async def test_concurrent_submissions_run_fifo_and_deduplicate_recording(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             repository = EchoRepository(Path(temp_dir) / "echo.db")
             repository.initialize()
@@ -43,8 +43,12 @@ class JobRunnerTests(unittest.IsolatedAsyncioTestCase):
             provider = BlockingProvider()
             runner = JobRunner(repository, provider)
 
-            first = await runner.submit(first_recording["id"])
-            second = await runner.submit(second_recording["id"])
+            first, second, duplicate = await asyncio.gather(
+                runner.submit(first_recording["id"]),
+                runner.submit(second_recording["id"]),
+                runner.submit(first_recording["id"]),
+            )
+            self.assertEqual(duplicate["id"], first["id"])
             await self._wait_until(lambda: provider.started == ["first.wav"])
 
             queued = repository.get_job(second["id"])
