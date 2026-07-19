@@ -50,7 +50,7 @@ zablokowany — implementacja wymaga ukończonego i zweryfikowanego kontraktu
 ## Referencje
 
 - Analiza: `docs/03_reports/2026-07-18_audyt_pipeline_transkrypcji_i_diaryzacji.md`
-- Plan zależny: `docs/02_plans/implementation/03_stabilizacja_pipeline_i_benchmarku.md`
+- Plan zależny: `docs/02_plans/completed/03_stabilizacja_pipeline_i_benchmarku.md`
 - Spec/architektura po planie 03: `docs/00_specification/pipeline_transkrypcji.md`,
   `docs/01_architecture/pipeline_transkrypcji.md`
 - Kod backendu: `src/echo_app/transcription.py`, `src/echo_app/config.py`,

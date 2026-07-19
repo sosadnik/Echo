@@ -202,27 +202,71 @@ normalny
 
 ## Weryfikacja końcowa
 
-- [ ] Testy zakresowe dla zmiany:
+- [x] Testy zakresowe dla zmiany:
   `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v`
-- [ ] Pełny zestaw testów uruchomiony lokalnie i w kontenerze GPU na Pop!_OS;
+- [x] Pełny zestaw testów uruchomiony lokalnie i w kontenerze GPU na Pop!_OS;
   brak pobierania ciężkich modeli w zwykłych testach jednostkowych.
-- [ ] Test E2E kolejki: dwa joby zgłoszone równocześnie wykonują się sekwencyjnie,
+- [x] Test E2E kolejki: dwa joby zgłoszone równocześnie wykonują się sekwencyjnie,
   a trzeci duplikat nie tworzy drugiej inferencji tego samego nagrania.
-- [ ] Test restartu: aktywny job po restarcie ma `interrupted`, nagranie jest
+- [x] Test restartu: aktywny job po restarcie ma `interrupted`, nagranie jest
   ponownie dostępne, a retry tworzy nowy jednoznaczny job.
-- [ ] Benchmark smoke potwierdza różnicę alignment on/off, cold/warm timings,
+- [x] Benchmark smoke potwierdza różnicę alignment on/off, cold/warm timings,
   powtórzenia, kompletne provenance i `N/A` dla brakujących gold metryk.
-- [ ] Kryteria jakości: częściowy alignment nie gubi słów, diarization failure daje
+- [x] Kryteria jakości: częściowy alignment nie gubi słów, diarization failure daje
   jawny zdegradowany wynik, a luki nie są arbitralnie przypisywane speakerowi.
-- [ ] Kryteria prywatności: API nie ujawnia tokenów, port GPU jest localhost-only,
+- [x] Kryteria prywatności: API nie ujawnia tokenów, port GPU jest localhost-only,
   prywatny dataset i artefakty nie trafiają przypadkiem do repo.
-- [ ] Dokumentacja/spec/architektura, README, `.env.example` i przewodnik Pop!_OS
+- [x] Dokumentacja/spec/architektura, README, `.env.example` i przewodnik Pop!_OS
   odpowiadają wdrożeniu.
-- [ ] `git diff --check` oraz
+- [x] `git diff --check` oraz
   `.venv/bin/python .codex/hooks/workflow-check.py --project-root .` przechodzą.
-- [ ] Brak znanych regresji i nierozwiązanych blockerów.
+- [x] Brak znanych regresji i nierozwiązanych blockerów.
 
 ## Wynik weryfikacji
 
-<!-- Wypełnia verify: data, dokładne komendy, wyniki, testy manualne/E2E i ograniczenia. -->
-Nie przeprowadzono.
+Weryfikację zakończono 2026-07-19 na macOS oraz Pop!_OS z RTX 5070 Ti.
+
+- Testy lokalne: `PYTHONPATH=src .venv/bin/python -m unittest discover -s tests -v`
+  — 97 testów OK, 1 pominięty z powodu braku lokalnego `ffmpeg`. Test zakresowy
+  `tests.test_pipeline_contracts.PipelineContractTests.test_app_commit_falls_back_to_git_metadata_without_git_binary`
+  przeszedł po odtworzeniu braku binarki Git z obrazu runtime.
+- Testy GPU: `ssh popos 'cd ~/Documents/Git/Echo && docker compose run --rm -T echo
+  python3 -m unittest discover -s tests -v'` — 97 testów OK, bez pominięć i bez
+  pobierania modeli ML. `docker compose --profile tools run --rm gpu-preflight`
+  zwrócił `status=ok`: Python 3.12.3, ffmpeg, CUDA 12.8, RTX 5070 Ti, 98,7 GB
+  wolnego miejsca oraz przypięte wersje faster-whisper 1.2.1, pyannote.audio 4.0.7,
+  whisperx 3.8.6, torch 2.8.0+cu128 i ctranslate2 4.8.1.
+- E2E kolejki: test
+  `tests.test_jobs.JobRunnerTests.test_concurrent_submissions_run_fifo_and_deduplicate_recording`
+  zgłosił równocześnie dwa nagrania i duplikat pierwszego; duplikat zwrócił ten sam
+  `job_id`, a provider wykonał `first.wav`, potem `second.wav`.
+- Restart/recovery: po `docker compose up -d echo` osierocony job
+  `98bf3bfe69ba418eb442fb3ba270d119` miał status `interrupted` i błąd
+  `Job przerwany przez restart serwera.`, nagranie wróciło do `ready`, a późniejsze
+  retry mają odrębne identyfikatory i status `completed`.
+- Benchmark GPU: uruchomiono `scripts/benchmark_transcription.py` z run ID
+  `plan03-control-20260719-r2`, `--warmup-runs 1`, ośmioma wariantami
+  `large-v3|large-v3-turbo` × `filter=none|full` × `align=off|on`, każdy z
+  `repeats=3`, na sześciu scenariuszach. `run-manifest.json` ma `completed`, 144/144
+  wyników punktowanych zakończyło się sukcesem, dodatkowo zapisano 8 warm-upów.
+  Wszystkie 152 artefakty mają `benchmark-artifact/v1`, sprzęt i
+  `echo_commit=f00095662acf`; mediana alignmentu wyniosła 0,286 s dla `on` wobec
+  około 0 s dla `off`. 48 wyników bez gold speakerów ma `N/A` z powodem, a 96
+  wyników z segmentami ma policzone metryki speakerów. Sześć jawnych fallbacków
+  alignmentu i 12 degradacji diaryzacji zachowało wynik ASR i warning.
+- Prywatność/runtime: dataset i wyniki pozostają wyłącznie w named volume pod
+  `/data/echo/benchmark-dataset` i `/data/echo/benchmarks`; `git status` nie pokazał
+  prywatnych plików. `curl http://192.168.1.140:8765/api/health` z LAN nie połączył
+  się, `ss -ltn` pokazał wyłącznie `127.0.0.1:8765`, a tunel
+  `ssh -L 18765:127.0.0.1:8765 popos` zwrócił health `status=ok`. Test manifestu
+  potwierdził brak tokenu Hugging Face w serializowanym payloadzie.
+- Dokumentacja i runtime: `docker compose config -q` oraz konfiguracja z
+  `compose.dev.yaml` przeszły; stabilny Compose nie używa `--reload`, override dev
+  używa go jawnie. README, specyfikacja, architektura, `.env.example` i przewodniki
+  odpowiadają wdrożeniu.
+- Kontrole końcowe: `git diff --check` oraz `.venv/bin/python
+  .codex/hooks/workflow-check.py --project-root .` — OK.
+
+Ograniczenie: teksty datasetu są pseudo-labelami z poprzedniego przebiegu, nie ręcznym
+gold setem. Wynik służy do porównania technicznego i smoke testu; zgodnie z planem nie
+zmieniono domyślnego VAD ani filtrów na podstawie jednego prywatnego nagrania.

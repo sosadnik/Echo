@@ -2,7 +2,7 @@
 
 - **Status:** Zaakceptowana
 - **Data:** 2026-07-18
-- **Powiązania:** plan `docs/02_plans/implementation/03_stabilizacja_pipeline_i_benchmarku.md`, raport `docs/03_reports/2026-07-18_audyt_pipeline_transkrypcji_i_diaryzacji.md`
+- **Powiązania:** plan `docs/02_plans/completed/03_stabilizacja_pipeline_i_benchmarku.md`, raport `docs/03_reports/2026-07-18_audyt_pipeline_transkrypcji_i_diaryzacji.md`
 
 ## Kontekst
 
