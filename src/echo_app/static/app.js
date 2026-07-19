@@ -54,8 +54,13 @@ const closeSettingsButton = document.querySelector("#close-settings-button");
 const settingsForm = document.querySelector("#settings-form");
 const settingsWhisperModelSelect = document.querySelector("#settings-whisper-model");
 const settingsWhisperDeviceSelect = document.querySelector("#settings-whisper-device");
+const settingsWhisperComputeTypeSelect = document.querySelector("#settings-whisper-compute-type");
+const settingsEffectiveComputeType = document.querySelector("#settings-effective-compute-type");
 const settingsDiarizationModelInput = document.querySelector("#settings-diarization-model");
 const settingsDiarizationDeviceSelect = document.querySelector("#settings-diarization-device");
+const settingsAsrFilterPresetSelect = document.querySelector("#settings-asr-filter-preset");
+const settingsDiarizationFilterPresetSelect = document.querySelector("#settings-diarization-filter-preset");
+const settingsAlignmentEnabledInput = document.querySelector("#settings-alignment-enabled");
 const settingsTokenState = document.querySelector("#settings-token-state");
 const settingsStatus = document.querySelector("#settings-status");
 const settingsSubmitButton = document.querySelector("#settings-submit-button");
@@ -107,7 +112,6 @@ let clipSequenceMode = null;
 const THEME_STORAGE_KEY = "echo-theme";
 const SPEAKER_PREFS_STORAGE_KEY = "echo-speaker-prefs";
 const VALID_THEMES = new Set(["light", "dark", "system"]);
-const WHISPER_MODEL_OPTIONS = new Set(["tiny", "base", "small", "medium", "large-v3", "turbo"]);
 
 function loadSpeakerPrefs() {
   try {
@@ -198,12 +202,12 @@ function getDeviceModeLabel(value) {
   return normalized.startsWith("cuda") ? "GPU" : "CPU";
 }
 
-function getAllowedWhisperModel(value) {
+function canonicalWhisperModel(value) {
   const normalized = String(value || "").trim();
-  if (WHISPER_MODEL_OPTIONS.has(normalized)) {
-    return normalized;
+  if (normalized.toLowerCase() === "turbo") {
+    return "large-v3-turbo";
   }
-  return "small";
+  return normalized;
 }
 
 function escapeHtml(value) {
@@ -876,12 +880,20 @@ function renderSettingsForm({ force = false } = {}) {
     return;
   }
 
-  settingsWhisperModelSelect.value = getAllowedWhisperModel(settings.whisper_model);
+  const model = canonicalWhisperModel(settings.whisper_model);
+  ensureSelectValue(settingsWhisperModelSelect, model);
+  settingsWhisperModelSelect.value = model;
   ensureSelectValue(settingsWhisperDeviceSelect, settings.whisper_device || "cpu");
   settingsWhisperDeviceSelect.value = settings.whisper_device || "cpu";
+  ensureSelectValue(settingsWhisperComputeTypeSelect, settings.whisper_compute_type || "auto");
+  settingsWhisperComputeTypeSelect.value = settings.whisper_compute_type || "auto";
+  settingsEffectiveComputeType.textContent = `efektywnie: ${settings.effective_whisper_compute_type || "-"}`;
   settingsDiarizationModelInput.value = settings.diarization_model || "";
   ensureSelectValue(settingsDiarizationDeviceSelect, settings.diarization_device || settings.whisper_device || "cpu");
   settingsDiarizationDeviceSelect.value = settings.diarization_device || settings.whisper_device || "cpu";
+  settingsAsrFilterPresetSelect.value = settings.asr_filter_preset || "full";
+  settingsDiarizationFilterPresetSelect.value = settings.diarization_filter_preset || "none";
+  settingsAlignmentEnabledInput.checked = Boolean(settings.alignment_enabled);
 }
 
 function setUploadStatus(message, tone = "neutral") {
@@ -1589,10 +1601,14 @@ async function updateRecordingName(recordingId, originalName) {
 
 function serializeSettingsForm() {
   return {
-    whisper_model: settingsWhisperModelSelect.value.trim(),
+    whisper_model: canonicalWhisperModel(settingsWhisperModelSelect.value),
     whisper_device: settingsWhisperDeviceSelect.value.trim().toLowerCase(),
+    whisper_compute_type: settingsWhisperComputeTypeSelect.value.trim().toLowerCase(),
     diarization_model: settingsDiarizationModelInput.value.trim(),
     diarization_device: settingsDiarizationDeviceSelect.value.trim().toLowerCase(),
+    alignment_enabled: settingsAlignmentEnabledInput.checked,
+    asr_filter_preset: settingsAsrFilterPresetSelect.value.trim().toLowerCase(),
+    diarization_filter_preset: settingsDiarizationFilterPresetSelect.value.trim().toLowerCase(),
   };
 }
 

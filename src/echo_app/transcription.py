@@ -3,15 +3,25 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib import metadata
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import Callable, Iterator, Protocol
 import wave
 
 from .config import AppSettings
-from .schemas import TranscriptResult, TranscriptSegment
+from .schemas import (
+    AsrSegment,
+    AsrWord,
+    PipelineManifest,
+    PipelineWarning,
+    StageTiming,
+    TranscriptResult,
+    TranscriptSegment,
+)
 
 
 class TranscriptionError(RuntimeError):
@@ -44,6 +54,61 @@ class WordToken:
     start: float
     end: float
     text: str
+    aligned: bool = True
+    raw_speaker: str | None = None
+    speaker_overlap_seconds: float = 0.0
+
+
+@dataclass(slots=True)
+class AsrResult:
+    """Wynik ASR, którego tekst i granice segmentów są źródłem prawdy."""
+
+    text: str
+    segments: list[AsrSegment]
+
+    @property
+    def words(self) -> list[WordToken]:
+        return [
+            WordToken(
+                start=word.start,
+                end=word.end,
+                text=word.text,
+                aligned=word.aligned,
+                raw_speaker=word.speaker,
+            )
+            for segment in self.segments
+            for word in segment.words
+        ]
+
+    def with_aligned_words(self, words: list[WordToken]) -> "AsrResult":
+        """Zachowuje tekst ASR i liczbę słów, aktualizując jedynie metadane słów."""
+        iterator = iter(words)
+        updated: list[AsrSegment] = []
+        for segment in self.segments:
+            segment_words: list[AsrWord] = []
+            for raw_word in segment.words:
+                word = next(iterator, None)
+                if word is None:
+                    segment_words.append(raw_word)
+                    continue
+                segment_words.append(
+                    AsrWord(
+                        text=raw_word.text,
+                        start=word.start,
+                        end=word.end,
+                        aligned=word.aligned,
+                        speaker=word.raw_speaker,
+                    )
+                )
+            updated.append(segment.model_copy(update={"words": segment_words}))
+        return AsrResult(text=self.text, segments=updated)
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedAudioSources:
+    neutral_path: Path
+    asr_path: Path
+    diarization_path: Path
 
 
 @dataclass(slots=True)
@@ -226,35 +291,118 @@ class LocalTranscriptionProvider:
         recording_path: Path,
         progress: ProgressCallback | None = None,
     ) -> TranscriptResult:
+        timings: dict[str, StageTiming] = {}
+        warnings: list[PipelineWarning] = []
+        pipeline_started = time.perf_counter()
         emit_progress(progress, "prepare", self.PREPARE_START, "Przygotowanie audio do transkrypcji.")
-        with self._prepare_audio_source(recording_path, progress) as audio_path:
-            audio_duration = self._read_wav_duration(audio_path)
+        prepare_started = time.perf_counter()
+        with self._prepare_audio_sources(recording_path, progress) as audio_sources:
+            timings["prepare"] = StageTiming(seconds=time.perf_counter() - prepare_started)
+            audio_duration = self._read_wav_duration(audio_sources.neutral_path)
             emit_progress(progress, "whisper", self.WHISPER_START, "Whisper: start transkrypcji i timestampów.")
-            words, transcript_text = self._run_whisper(
-                audio_path,
+            load_started = time.perf_counter()
+            self._load_whisper_model()
+            timings["whisper_load"] = StageTiming(seconds=time.perf_counter() - load_started, cold_start=True)
+            asr_started = time.perf_counter()
+            asr_result = self._run_whisper(
+                audio_sources.asr_path,
                 recording_path.name,
                 audio_duration,
                 progress,
             )
+            timings["asr"] = StageTiming(seconds=time.perf_counter() - asr_started)
+            words = asr_result.words
             emit_progress(progress, "alignment", self.ALIGNMENT_START, "Alignment: dopasowywanie słów do audio.")
-            words = self._run_alignment(words, audio_path, recording_path.name, progress)
+            alignment_started = time.perf_counter()
+            words = self._run_alignment(words, audio_sources.neutral_path, recording_path.name, progress)
+            timings["alignment"] = StageTiming(seconds=time.perf_counter() - alignment_started)
+            warnings.extend(
+                PipelineWarning(code="alignment_fallback", stage="alignment", message=message)
+                for message in getattr(self._aligner, "warnings", [])
+            )
             emit_progress(progress, "diarization", self.DIARIZATION_START, "Diarizacja: start analizy speakerów.")
-            speaker_turns = self._run_diarization(audio_path, recording_path.name, progress)
+            diarization_started = time.perf_counter()
+            try:
+                speaker_turns = self._run_diarization(audio_sources.diarization_path, recording_path.name, progress)
+            except TranscriptionError:
+                if self.settings.diarization_strict:
+                    raise
+                speaker_turns = []
+                warnings.append(
+                    PipelineWarning(
+                        code="diarization_degraded",
+                        stage="diarization",
+                        message="Diarizacja nie powiodła się; zachowano transkrypcję jako jednego speakera.",
+                    )
+                )
+            timings["diarization"] = StageTiming(seconds=time.perf_counter() - diarization_started)
         emit_progress(progress, "merge", self.MERGE_START, "Scalanie segmentów i przygotowanie wyniku.")
+        merge_started = time.perf_counter()
         segments = self._merge_words_into_segments(words, speaker_turns)
 
-        if not segments and transcript_text:
+        asr_result = asr_result.with_aligned_words(words)
+        if not segments and asr_result.text:
             segments = [
                 TranscriptSegment(
                     speaker="Speaker 1",
                     start=0.0,
                     end=max((word.end for word in words), default=0.0),
-                    text=transcript_text,
+                    text=asr_result.text,
                 )
             ]
 
+        timings["merge"] = StageTiming(seconds=time.perf_counter() - merge_started)
+        timings["total"] = StageTiming(seconds=time.perf_counter() - pipeline_started)
+        manifest = self._build_manifest(
+            audio_duration=audio_duration,
+            timings=timings,
+            warnings=warnings,
+            words=words,
+        )
         emit_progress(progress, "merge", self.MERGE_END, "Finalizacja wyniku transkrypcji.")
-        return TranscriptResult(provider=self.name, text=transcript_text, segments=segments)
+        return TranscriptResult(
+            provider=self.name,
+            text=asr_result.text,
+            segments=segments,
+            asr_segments=asr_result.segments,
+            manifest=manifest,
+        )
+
+    def _build_manifest(
+        self,
+        *,
+        audio_duration: float,
+        timings: dict[str, StageTiming],
+        warnings: list[PipelineWarning],
+        words: list[WordToken],
+    ) -> PipelineManifest:
+        versions: dict[str, str] = {}
+        for package in ("faster-whisper", "pyannote.audio", "whisperx"):
+            try:
+                versions[package] = metadata.version(package)
+            except metadata.PackageNotFoundError:
+                continue
+        total_seconds = timings["total"].seconds
+        return PipelineManifest(
+            backend=self.name,
+            model=self.settings.whisper_model,
+            effective_settings={
+                "alignment_enabled": self.settings.alignment_enabled,
+                "asr_filter_preset": self.settings.asr_filter_preset,
+                "diarization_filter_preset": self.settings.diarization_filter_preset,
+                "vad_parameters": dict(self.VAD_PARAMETERS),
+                "diarization_strict": self.settings.diarization_strict,
+                "speaker_overlap_threshold_seconds": self.settings.speaker_overlap_threshold_seconds,
+            },
+            device=self.settings.whisper_device,
+            compute_type=self.settings.effective_whisper_compute_type,
+            library_versions=versions,
+            stage_timings=timings,
+            warnings=warnings,
+            word_counts={"asr": len(words), "aligned": sum(word.aligned for word in words)},
+            audio_duration_seconds=audio_duration or None,
+            realtime_factor=(total_seconds / audio_duration) if audio_duration > 0 else None,
+        )
 
     @contextmanager
     def _prepare_audio_source(
@@ -262,6 +410,15 @@ class LocalTranscriptionProvider:
         recording_path: Path,
         progress: ProgressCallback | None = None,
     ) -> Iterator[Path]:
+        with self._prepare_audio_sources(recording_path, progress) as sources:
+            yield sources.asr_path
+
+    @contextmanager
+    def _prepare_audio_sources(
+        self,
+        recording_path: Path,
+        progress: ProgressCallback | None = None,
+    ) -> Iterator[PreparedAudioSources]:
         ffmpeg_path = shutil.which("ffmpeg")
         if ffmpeg_path is None:
             raise TranscriptionError(
@@ -269,47 +426,52 @@ class LocalTranscriptionProvider:
             )
 
         with tempfile.TemporaryDirectory(prefix="echo-audio-") as temp_dir:
-            normalized_path = Path(temp_dir) / f"{recording_path.stem}.wav"
+            neutral_path = Path(temp_dir) / "neutral.wav"
             try:
                 self._run_prepare_command(
                     self._build_prepare_audio_command(
                         ffmpeg_path,
                         recording_path,
-                        normalized_path,
-                        filter_preset=self.settings.prepare_filter_preset,
+                        neutral_path,
+                        filter_preset="none",
                     )
                 )
             except subprocess.CalledProcessError as exc:
                 details = (exc.stderr or exc.stdout or "").strip()
-                if self._should_retry_prepare_without_filters(details):
-                    try:
-                        self._run_prepare_command(
-                            self._build_prepare_audio_command(
-                                ffmpeg_path,
-                                recording_path,
-                                normalized_path,
-                                filter_preset="none",
-                            )
-                        )
-                    except subprocess.CalledProcessError as fallback_exc:
-                        fallback_details = (fallback_exc.stderr or fallback_exc.stdout or "").strip()
-                        suffix = f" {fallback_details}" if fallback_details else ""
-                        raise TranscriptionError(
-                            f"Nie udalo sie przygotowac pliku audio `{recording_path.name}` przy pomocy ffmpeg.{suffix}"
-                        ) from fallback_exc
-                else:
-                    suffix = f" {details}" if details else ""
-                    raise TranscriptionError(
-                        f"Nie udalo sie przygotowac pliku audio `{recording_path.name}` przy pomocy ffmpeg.{suffix}"
-                    ) from exc
+                suffix = f" {details}" if details else ""
+                raise TranscriptionError(
+                    f"Nie udalo sie przygotowac pliku audio `{recording_path.name}` przy pomocy ffmpeg.{suffix}"
+                ) from exc
 
-            if not normalized_path.exists():
+            if not neutral_path.exists():
                 raise TranscriptionError(
                     f"Nie udalo sie przygotowac pliku audio `{recording_path.name}`: brak pliku wyjsciowego."
                 )
 
+            asr_path = self._prepare_audio_variant(
+                ffmpeg_path, neutral_path, Path(temp_dir) / "asr.wav", self.settings.asr_filter_preset
+            )
+            diarization_path = self._prepare_audio_variant(
+                ffmpeg_path, neutral_path, Path(temp_dir) / "diarization.wav", self.settings.diarization_filter_preset
+            )
+
             emit_progress(progress, "prepare", self.PREPARE_END, "Audio przygotowane. Start modelu Whisper.")
-            yield normalized_path
+            yield PreparedAudioSources(neutral_path, asr_path, diarization_path)
+
+    def _prepare_audio_variant(self, ffmpeg_path: str, neutral_path: Path, output_path: Path, preset: str) -> Path:
+        if str(preset).strip().lower() == "none":
+            return neutral_path
+        command = self._build_prepare_audio_command(ffmpeg_path, neutral_path, output_path, filter_preset=preset)
+        try:
+            self._run_prepare_command(command)
+        except subprocess.CalledProcessError as exc:
+            details = (exc.stderr or exc.stdout or "").strip()
+            if not self._should_retry_prepare_without_filters(details):
+                raise TranscriptionError(f"Nie udalo sie przygotowac wariantu audio. {details}") from exc
+            return neutral_path
+        if not output_path.exists():
+            raise TranscriptionError("ffmpeg nie utworzyl wariantu audio.")
+        return output_path
 
     def _build_prepare_audio_command(
         self,
@@ -377,7 +539,7 @@ class LocalTranscriptionProvider:
         source_name: str,
         audio_duration: float,
         progress: ProgressCallback | None = None,
-    ) -> tuple[list[WordToken], str]:
+    ) -> AsrResult:
         whisper_model = self._load_whisper_model()
         transcribe_kwargs = self._build_transcribe_kwargs()
 
@@ -386,8 +548,8 @@ class LocalTranscriptionProvider:
         except Exception as exc:
             raise TranscriptionError(f"Whisper failed for `{source_name}`: {exc}") from exc
 
-        words: list[WordToken] = []
         transcript_parts: list[str] = []
+        asr_segments: list[AsrSegment] = []
         for segment in segments_iter:
             segment_end = float(getattr(segment, "end", 0.0) or 0.0)
             if audio_duration > 0:
@@ -402,6 +564,7 @@ class LocalTranscriptionProvider:
                 transcript_parts.append(segment_text)
 
             segment_words = getattr(segment, "words", None) or []
+            parsed_words: list[AsrWord] = []
             if segment_words:
                 for word in segment_words:
                     text = (getattr(word, "word", "") or "").strip()
@@ -409,21 +572,30 @@ class LocalTranscriptionProvider:
                     end = getattr(word, "end", None)
                     if not text or start is None or end is None or is_punctuation_only(text):
                         continue
-                    words.append(WordToken(start=float(start), end=float(end), text=text))
-                continue
+                    parsed_words.append(AsrWord(start=float(start), end=float(end), text=text))
 
-            if segment_text and not is_punctuation_only(segment_text):
-                words.append(
-                    WordToken(
+            if not parsed_words and segment_text and not is_punctuation_only(segment_text):
+                parsed_words.append(
+                    AsrWord(
                         start=float(getattr(segment, "start", 0.0) or 0.0),
                         end=float(getattr(segment, "end", 0.0) or 0.0),
                         text=segment_text,
                     )
                 )
 
+            if segment_text or parsed_words:
+                asr_segments.append(
+                    AsrSegment(
+                        start=float(getattr(segment, "start", 0.0) or 0.0),
+                        end=segment_end,
+                        text=segment_text,
+                        words=parsed_words,
+                    )
+                )
+
         transcript_text = " ".join(part for part in transcript_parts if part).strip()
         emit_progress(progress, "whisper", self.WHISPER_END, "Whisper: transkrypcja zakończona.")
-        return words, transcript_text
+        return AsrResult(text=transcript_text, segments=asr_segments)
 
     def _run_alignment(
         self,
@@ -432,6 +604,9 @@ class LocalTranscriptionProvider:
         source_name: str,
         progress: ProgressCallback | None = None,
     ) -> list[WordToken]:
+        if not self.settings.alignment_enabled:
+            emit_progress(progress, "alignment", self.ALIGNMENT_END, "Alignment: wyłączony w ustawieniach.")
+            return words
         aligner = self._load_aligner()
         aligned_words = aligner.align(words, audio_path, source_name)
         emit_progress(progress, "alignment", self.ALIGNMENT_END, "Alignment: słowa dopasowane do audio.")
@@ -521,7 +696,7 @@ class LocalTranscriptionProvider:
             self._whisper_model = WhisperModel(
                 model_ref,
                 device=self.settings.whisper_device,
-                compute_type=self.settings.whisper_compute_type,
+                compute_type=self.settings.effective_whisper_compute_type,
                 download_root=str(self.settings.whisper_cache_dir),
             )
         except Exception as exc:
@@ -580,16 +755,20 @@ class LocalTranscriptionProvider:
 
         speaker_labels: dict[str, str] = {}
         merged_segments: list[TranscriptSegment] = []
-        turn_index = 0
-
         for word in words:
-            raw_speaker, turn_index = self._pick_speaker_for_word(word, speaker_turns, turn_index)
-            display_speaker = speaker_labels.setdefault(
-                raw_speaker,
-                f"Speaker {len(speaker_labels) + 1}",
-            )
+            raw_speaker, overlap = self._pick_speaker_for_word(word, speaker_turns)
+            word.raw_speaker = raw_speaker
+            word.speaker_overlap_seconds = overlap
+            if raw_speaker == "UNKNOWN":
+                display_speaker = "UNKNOWN"
+            else:
+                display_speaker = speaker_labels.setdefault(raw_speaker, f"Speaker {len(speaker_labels) + 1}")
 
-            if merged_segments and merged_segments[-1].speaker == display_speaker and word.start - merged_segments[-1].end <= 1.2:
+            if (
+                merged_segments
+                and merged_segments[-1].speaker == display_speaker
+                and word.start - merged_segments[-1].end <= self.settings.segment_merge_gap_seconds
+            ):
                 merged_segments[-1].end = word.end
                 merged_segments[-1].text = self._append_text(merged_segments[-1].text, word.text)
                 continue
@@ -609,29 +788,20 @@ class LocalTranscriptionProvider:
         self,
         word: WordToken,
         speaker_turns: list[SpeakerTurn],
-        turn_index: int,
-    ) -> tuple[str, int]:
+    ) -> tuple[str, float]:
         if not speaker_turns:
-            return "SPEAKER_00", turn_index
+            return "SPEAKER_00", 0.0
 
-        midpoint = (word.start + word.end) / 2
-        last_index = len(speaker_turns) - 1
-
-        while turn_index < last_index and midpoint > speaker_turns[turn_index].end:
-            turn_index += 1
-
-        current_turn = speaker_turns[turn_index]
-        if current_turn.start <= midpoint <= current_turn.end:
-            return current_turn.speaker, turn_index
-
-        if turn_index > 0:
-            previous_turn = speaker_turns[turn_index - 1]
-            distance_to_previous = abs(midpoint - previous_turn.end)
-            distance_to_current = abs(current_turn.start - midpoint)
-            if distance_to_previous <= distance_to_current:
-                return previous_turn.speaker, turn_index
-
-        return current_turn.speaker, turn_index
+        winner: SpeakerTurn | None = None
+        winner_overlap = 0.0
+        for turn in speaker_turns:
+            overlap = max(0.0, min(word.end, turn.end) - max(word.start, turn.start))
+            if overlap > winner_overlap:
+                winner = turn
+                winner_overlap = overlap
+        if winner is None or winner_overlap < self.settings.speaker_overlap_threshold_seconds:
+            return "UNKNOWN", winner_overlap
+        return winner.speaker, winner_overlap
 
     def _append_text(self, current_text: str, token: str) -> str:
         if not current_text:

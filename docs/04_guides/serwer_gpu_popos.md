@@ -88,10 +88,10 @@ ssh popos 'docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia
 ## Echo w Dockerze — workflow iteracji (repo `~/Documents/Git/Echo`)
 
 Kod synchronizuje się przez git, nie przez bind-mount z Maca: `git push` na Macu →
-`ssh popos 'cd ~/Documents/Git/Echo && git pull'`. `compose.yaml` bind-mountuje repo do `/app`
-i uruchamia `uvicorn --reload`, więc zmiany w `src/echo_app/` widoczne po `git pull` przeładowują
-backend automatycznie — restart compose potrzebny tylko po zmianie `Dockerfile`/`pyproject.toml`
-(`docker compose up -d --build`).
+`ssh popos 'cd ~/Documents/Git/Echo && git pull'`. Zwykły `compose.yaml` wiąże port wyłącznie
+z `127.0.0.1` hosta i uruchamia stabilny serwer bez `--reload`; UI pozostaje dostępne przez
+tunel SSH. Do krótkiego developmentu użyj jawnie `docker compose -f compose.yaml -f compose.dev.yaml up`.
+Po zmianie `Dockerfile`/`pyproject.toml` wykonaj `docker compose up -d --build`.
 
 Przydatne komendy (z katalogu repo na popos):
 

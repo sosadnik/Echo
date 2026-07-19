@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 import logging
@@ -353,7 +354,12 @@ def create_app() -> FastAPI:
     provider = build_provider(settings)
     job_runner = JobRunner(repository, provider)
 
-    app = FastAPI(title=settings.app_name)
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        yield
+        await application.state.job_runner.stop()
+
+    app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.state.settings = settings
     app.state.repository = repository
     app.state.provider = provider
@@ -388,8 +394,12 @@ def create_app() -> FastAPI:
             whisper_model=value.whisper_model,
             whisper_device=value.whisper_device,
             whisper_compute_type=value.whisper_compute_type,
+            effective_whisper_compute_type=value.effective_whisper_compute_type,
             diarization_model=value.diarization_model,
             diarization_device=value.diarization_device,
+            alignment_enabled=value.alignment_enabled,
+            asr_filter_preset=value.asr_filter_preset,
+            diarization_filter_preset=value.diarization_filter_preset,
             language_hint=value.language_hint,
             min_speakers=value.min_speakers,
             max_speakers=value.max_speakers,
@@ -451,6 +461,7 @@ def create_app() -> FastAPI:
                 detail="Nie mozna zmienic konfiguracji podczas przetwarzania joba.",
             )
 
+        await current_job_runner().stop()
         updated = apply_settings_update(payload)
         LOGGER.info(
             "Updated runtime settings: whisper=%s/%s/%s diarization=%s/%s",

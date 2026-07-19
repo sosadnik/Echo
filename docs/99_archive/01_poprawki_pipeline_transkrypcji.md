@@ -1,5 +1,11 @@
 # 01 — Poprawki pipeline'u transkrypcji (jakość + forced alignment)
 
+> **Status: zastąpiony 2026-07-18 przez plan 03.** Checkpointy 1–4, 6 i strumienie
+> A/B są historycznie wykonane, ale plan nie przeszedł końcowej weryfikacji. Jego
+> otwarty checkpoint 5 (benchmark na realnych danych) przejmują checkpointy 9 i 11
+> planu 03, a wszystkie otwarte kryteria końcowe przejmuje jego sekcja
+> „Weryfikacja końcowa”. Ten plan jest zachowany wyłącznie jako kontekst historii.
+
 ## Kontekst
 
 Transkrypcje nagrań z dyktafonu (polski) gubiły kwestie i myliły speakerów. Analiza

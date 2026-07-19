@@ -94,6 +94,30 @@ class ForcedAlignerTests(unittest.TestCase):
             with self.assertRaises(Exception):
                 aligner._align_with_whisperx(self.words, Path("/tmp/input.wav"))
 
+    def test_align_processes_long_input_in_chunks_and_preserves_missing_words(self) -> None:
+        words = [WordToken(start=float(index), end=float(index + 1), text=f"w{index}") for index in range(5)]
+        aligner = ForcedAligner(max_words_per_chunk=2)
+
+        with patch.object(
+            aligner,
+            "_align_with_whisperx",
+            side_effect=[
+                [WordToken(start=0.1, end=0.9, text="w0")],
+                RuntimeError("chunk failure"),
+                [WordToken(start=4.1, end=4.9, text="w4")],
+            ],
+        ) as mocked:
+            result = aligner.align(words, Path("/tmp/input.wav"), "long.wav")
+
+        self.assertEqual([word.text for word in result], [word.text for word in words])
+        self.assertAlmostEqual(result[0].start, 0.1)
+        self.assertTrue(result[0].aligned)
+        self.assertEqual(result[1].start, 1.0)
+        self.assertTrue(result[1].aligned)
+        self.assertEqual(result[2].start, 2.0)
+        self.assertTrue(result[2].aligned)
+        self.assertEqual(mocked.call_count, 3)
+
 
 class LocalTranscriptionProviderAlignmentIntegrationTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -163,6 +187,20 @@ class LocalTranscriptionProviderAlignmentIntegrationTests(unittest.TestCase):
                 )
 
         self.assertEqual(result, self.raw_words)
+
+    def test_run_alignment_returns_raw_words_when_setting_is_disabled(self) -> None:
+        self.settings.alignment_enabled = False
+        fake_aligner = unittest.mock.Mock()
+
+        with patch.object(self.provider, "_load_aligner", return_value=fake_aligner):
+            result = self.provider._run_alignment(
+                self.raw_words,
+                Path("/tmp/input.wav"),
+                "nagranie.wav",
+            )
+
+        self.assertEqual(result, self.raw_words)
+        fake_aligner.align.assert_not_called()
 
 
 if __name__ == "__main__":

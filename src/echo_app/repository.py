@@ -32,6 +32,9 @@ create table if not exists jobs (
     error text,
     transcript_text text,
     result_json text,
+    manifest_json text,
+    warnings_json text,
+    interrupted_at text,
     foreign key (recording_id) references recordings(id)
 );
 
@@ -53,6 +56,7 @@ class EchoRepository:
         with self.connection() as connection:
             connection.executescript(SCHEMA)
             self._migrate_jobs_table(connection)
+            self._recover_interrupted_jobs(connection)
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -186,7 +190,7 @@ class EchoRepository:
                 """
                 select id, recording_id, provider, status, progress_percent, progress_stage, progress_message,
                        created_at, updated_at, error,
-                       transcript_text, result_json
+                       transcript_text, result_json, manifest_json, warnings_json, interrupted_at
                 from jobs
                 order by created_at desc
                 """
@@ -199,13 +203,20 @@ class EchoRepository:
                 """
                 select id, recording_id, provider, status, progress_percent, progress_stage, progress_message,
                        created_at, updated_at, error,
-                       transcript_text, result_json
+                       transcript_text, result_json, manifest_json, warnings_json, interrupted_at
                 from jobs
                 where id = ?
                 """,
                 (job_id,),
             ).fetchone()
         return self._job_row_to_dict(row) if row else None
+
+    def has_active_jobs(self) -> bool:
+        with self.connection() as connection:
+            row = connection.execute(
+                "select 1 from jobs where status in ('queued', 'running') limit 1"
+            ).fetchone()
+        return row is not None
 
     def create_job(self, recording_id: str, provider: str) -> dict:
         now = utc_now()
@@ -222,22 +233,62 @@ class EchoRepository:
             "error": None,
             "transcript_text": None,
             "result_json": None,
+            "manifest_json": None,
+            "warnings_json": None,
+            "interrupted_at": None,
         }
         with self.connection() as connection:
-            connection.execute(
-                """
-                insert into jobs (
-                    id, recording_id, provider, status, progress_percent, progress_stage, progress_message,
-                    created_at, updated_at, error, transcript_text, result_json
-                )
-                values (
-                    :id, :recording_id, :provider, :status, :progress_percent, :progress_stage, :progress_message,
-                    :created_at, :updated_at, :error, :transcript_text, :result_json
-                )
-                """,
-                payload,
-            )
+            self._insert_job(connection, payload)
         return self._job_payload_to_dict(payload)
+
+    def create_or_get_active_job(self, recording_id: str, provider: str) -> dict:
+        with self.connection() as connection:
+            active = connection.execute(
+                "select * from jobs where recording_id = ? and status in ('queued', 'running') order by created_at asc limit 1",
+                (recording_id,),
+            ).fetchone()
+            if active:
+                return self._job_row_to_dict(active)
+            now = utc_now()
+            payload = {
+                "id": uuid4().hex, "recording_id": recording_id, "provider": provider,
+                "status": "queued", "progress_percent": 0, "progress_stage": "queued",
+                "progress_message": "Job czeka w kolejce.", "created_at": now, "updated_at": now,
+                "error": None, "transcript_text": None, "result_json": None, "manifest_json": None,
+                "warnings_json": None, "interrupted_at": None,
+            }
+            self._insert_job(connection, payload)
+        return self._job_payload_to_dict(payload)
+
+    def _insert_job(self, connection: sqlite3.Connection, payload: dict) -> None:
+        connection.execute(
+            """
+            insert into jobs (
+                id, recording_id, provider, status, progress_percent, progress_stage, progress_message,
+                created_at, updated_at, error, transcript_text, result_json,
+                manifest_json, warnings_json, interrupted_at
+            ) values (
+                :id, :recording_id, :provider, :status, :progress_percent, :progress_stage, :progress_message,
+                :created_at, :updated_at, :error, :transcript_text, :result_json,
+                :manifest_json, :warnings_json, :interrupted_at
+            )
+            """, payload
+        )
+
+    def claim_next_queued_job(self) -> dict | None:
+        with self.connection() as connection:
+            row = connection.execute(
+                "select id from jobs where status = 'queued' order by created_at asc, id asc limit 1"
+            ).fetchone()
+            if not row:
+                return None
+            job_id = str(row["id"])
+            connection.execute(
+                "update jobs set status = 'running', updated_at = ?, progress_percent = 1, progress_stage = 'starting', progress_message = 'Uruchamianie joba.' where id = ? and status = 'queued'",
+                (utc_now(), job_id),
+            )
+            claimed = connection.execute("select * from jobs where id = ?", (job_id,)).fetchone()
+        return self._job_row_to_dict(claimed) if claimed else None
 
     def update_job_status(
         self,
@@ -298,7 +349,15 @@ class EchoRepository:
                 ),
             )
 
-    def complete_job(self, job_id: str, transcript_text: str, segments: list[dict]) -> None:
+    def complete_job(
+        self,
+        job_id: str,
+        transcript_text: str,
+        segments: list[dict],
+        *,
+        manifest: dict | None = None,
+        warnings: list[dict] | None = None,
+    ) -> None:
         with self.connection() as connection:
             connection.execute(
                 """
@@ -310,7 +369,9 @@ class EchoRepository:
                     updated_at = ?,
                     error = ?,
                     transcript_text = ?,
-                    result_json = ?
+                    result_json = ?,
+                    manifest_json = ?,
+                    warnings_json = ?
                 where id = ?
                 """,
                 (
@@ -322,6 +383,8 @@ class EchoRepository:
                     None,
                     transcript_text,
                     json.dumps({"segments": segments}),
+                    json.dumps(manifest, ensure_ascii=False) if manifest else None,
+                    json.dumps(warnings or [], ensure_ascii=False),
                     job_id,
                 ),
             )
@@ -336,6 +399,9 @@ class EchoRepository:
             "progress_percent": "integer not null default 0",
             "progress_stage": "text",
             "progress_message": "text",
+            "manifest_json": "text",
+            "warnings_json": "text",
+            "interrupted_at": "text",
         }
         for column_name, definition in required_columns.items():
             if column_name not in existing_columns:
@@ -382,12 +448,30 @@ class EchoRepository:
             """
         )
 
+    def _recover_interrupted_jobs(self, connection: sqlite3.Connection) -> None:
+        now = utc_now()
+        interrupted = connection.execute(
+            "select recording_id from jobs where status = 'running'"
+        ).fetchall()
+        if not interrupted:
+            return
+        connection.execute(
+            "update jobs set status = 'interrupted', updated_at = ?, interrupted_at = ?, error = 'Job przerwany przez restart serwera.', progress_stage = 'interrupted', progress_message = 'Job przerwany przez restart serwera.' where status = 'running'",
+            (now, now),
+        )
+        connection.executemany(
+            "update recordings set status = 'ready' where id = ?",
+            [(str(row["recording_id"]),) for row in interrupted],
+        )
+
     def _job_row_to_dict(self, row: sqlite3.Row) -> dict:
         payload = dict(row)
         return self._job_payload_to_dict(payload)
 
     def _job_payload_to_dict(self, payload: dict) -> dict:
         raw_result = payload.pop("result_json", None)
+        raw_manifest = payload.pop("manifest_json", None)
+        raw_warnings = payload.pop("warnings_json", None)
         segments: list[dict] = []
         if raw_result:
             try:
@@ -396,10 +480,30 @@ class EchoRepository:
             except json.JSONDecodeError:
                 segments = []
         payload["segments"] = segments
+        payload["manifest"] = self._parse_json_object(raw_manifest)
+        payload["warnings"] = self._parse_json_list(raw_warnings)
         payload["progress_percent"] = self._normalize_progress_percent(payload.get("progress_percent"))
         payload["progress_stage"] = payload.get("progress_stage")
         payload["progress_message"] = payload.get("progress_message")
         return payload
+
+    def _parse_json_object(self, raw_value: object) -> dict | None:
+        if not raw_value:
+            return None
+        try:
+            parsed = json.loads(str(raw_value))
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _parse_json_list(self, raw_value: object) -> list[dict]:
+        if not raw_value:
+            return []
+        try:
+            parsed = json.loads(str(raw_value))
+        except (TypeError, json.JSONDecodeError):
+            return []
+        return parsed if isinstance(parsed, list) else []
 
     def _normalize_progress_percent(self, value: object) -> int:
         try:

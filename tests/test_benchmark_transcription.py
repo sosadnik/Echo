@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -10,6 +11,9 @@ from benchmark_transcription import (  # noqa: E402
     BenchmarkVariant,
     VariantParseError,
     build_variants,
+    compute_cer,
+    compute_error_breakdown,
+    load_dataset_manifest,
     compute_wer,
     parse_args,
     parse_variant_spec,
@@ -18,11 +22,16 @@ from benchmark_transcription import (  # noqa: E402
 
 class ParseVariantSpecTests(unittest.TestCase):
     def test_parses_full_spec(self) -> None:
-        variant = parse_variant_spec("model=large-v3-turbo,filter=light,align=on")
+        variant = parse_variant_spec("model=large-v3-turbo,filter=light,align=on,repeats=3")
 
         self.assertEqual(variant.model, "large-v3-turbo")
         self.assertEqual(variant.filter_preset, "light")
         self.assertTrue(variant.alignment)
+        self.assertEqual(variant.repeats, 3)
+
+    def test_rejects_non_positive_repeats(self) -> None:
+        with self.assertRaises(VariantParseError):
+            parse_variant_spec("model=small,repeats=0")
 
     def test_defaults_filter_and_alignment_when_omitted(self) -> None:
         variant = parse_variant_spec("model=small")
@@ -166,6 +175,17 @@ class ParseArgsTests(unittest.TestCase):
 
         self.assertIsNone(args.output_dir)
 
+    def test_dataset_manifest_is_parsed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "sample.wav").write_bytes(b"audio")
+            manifest = root / "dataset.json"
+            manifest.write_text('{"samples":[{"audio":"sample.wav","scenario":"noise","reference_text":"test"}]}')
+            samples = load_dataset_manifest(manifest, root)
+
+        self.assertEqual(samples[0]["scenario"], "noise")
+        self.assertEqual(Path(samples[0]["audio_path"]).name, "sample.wav")
+
 
 class ComputeWerTests(unittest.TestCase):
     def test_identical_texts_have_zero_wer(self) -> None:
@@ -185,6 +205,17 @@ class ComputeWerTests(unittest.TestCase):
     def test_is_case_insensitive_and_ignores_punctuation(self) -> None:
         wer = compute_wer("Ala, ma kota!", "ala ma kota")
         self.assertEqual(wer, 0.0)
+
+    def test_cer_and_error_breakdown_are_hand_calculated(self) -> None:
+        self.assertEqual(compute_error_breakdown(["ala", "ma"], ["ola", "ma", "kota"]), {
+            "substitutions": 1,
+            "deletions": 0,
+            "insertions": 1,
+        })
+        self.assertAlmostEqual(compute_cer("abc", "adc"), 1 / 3)
+
+    def test_cer_empty_reference_is_not_zero(self) -> None:
+        self.assertIsNone(compute_cer("", "tekst"))
 
 
 if __name__ == "__main__":

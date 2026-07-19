@@ -88,7 +88,7 @@ class PrepareAudioCommandTests(unittest.TestCase):
         def fake_run(command: list[str], check: bool, capture_output: bool, text: bool):
             del check, capture_output, text
             commands.append(command)
-            if len(commands) == 1:
+            if len(commands) == 2:
                 raise subprocess.CalledProcessError(
                     1,
                     command,
@@ -105,8 +105,8 @@ class PrepareAudioCommandTests(unittest.TestCase):
                 self.assertTrue(audio_path.exists())
 
         self.assertEqual(len(commands), 2)
-        self.assertIn("-af", commands[0])
-        self.assertNotIn("-af", commands[1])
+        self.assertNotIn("-af", commands[0])
+        self.assertIn("-af", commands[1])
 
     def test_prepare_audio_source_uses_none_preset_without_af_flag(self) -> None:
         self.settings.prepare_filter_preset = "none"
@@ -145,10 +145,32 @@ class PrepareAudioCommandTests(unittest.TestCase):
             with self.provider._prepare_audio_source(Path("/tmp/input.wav")) as audio_path:
                 self.assertTrue(audio_path.exists())
 
-        self.assertEqual(len(commands), 1)
-        self.assertIn("-af", commands[0])
-        filter_index = commands[0].index("-af") + 1
-        self.assertEqual(commands[0][filter_index], self.provider.PREPARE_AUDIO_FILTER_LIGHT)
+        self.assertEqual(len(commands), 2)
+        self.assertNotIn("-af", commands[0])
+        self.assertIn("-af", commands[1])
+        filter_index = commands[1].index("-af") + 1
+        self.assertEqual(commands[1][filter_index], self.provider.PREPARE_AUDIO_FILTER_LIGHT)
+
+    def test_prepare_audio_sources_keeps_alignment_and_diarization_on_neutral_audio(self) -> None:
+        self.settings.asr_filter_preset = "light"
+        self.settings.diarization_filter_preset = "none"
+        commands: list[list[str]] = []
+
+        def fake_run(command: list[str], check: bool, capture_output: bool, text: bool):
+            del check, capture_output, text
+            commands.append(command)
+            Path(command[-1]).write_bytes(b"RIFF")
+            return subprocess.CompletedProcess(command, 0)
+
+        with (
+            patch("echo_app.transcription.shutil.which", return_value="/usr/bin/ffmpeg"),
+            patch("echo_app.transcription.subprocess.run", side_effect=fake_run),
+        ):
+            with self.provider._prepare_audio_sources(Path("/tmp/input.wav")) as sources:
+                self.assertNotEqual(sources.asr_path, sources.neutral_path)
+                self.assertEqual(sources.diarization_path, sources.neutral_path)
+
+        self.assertEqual(len(commands), 2)
 
 
 class PrepareFilterPresetSettingsTests(unittest.TestCase):

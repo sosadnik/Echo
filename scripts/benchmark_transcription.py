@@ -28,6 +28,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -54,6 +55,7 @@ class BenchmarkVariant:
     model: str
     filter_preset: str = "full"
     alignment: bool = False
+    repeats: int = 1
 
     @property
     def name(self) -> str:
@@ -66,6 +68,7 @@ class BenchmarkVariant:
             "model": self.model,
             "filter_preset": self.filter_preset,
             "alignment": self.alignment,
+            "repeats": self.repeats,
         }
 
 
@@ -123,14 +126,21 @@ def parse_variant_spec(spec: str) -> BenchmarkVariant:
     align_raw = fields.get("align", "off")
     alignment = _parse_bool_flag(align_raw, field_name="align")
 
-    known_keys = {"model", "filter", "align"}
+    try:
+        repeats = int(fields.get("repeats", "1"))
+    except ValueError as exc:
+        raise VariantParseError("`repeats` musi być dodatnią liczbą całkowitą.") from exc
+    if repeats < 1:
+        raise VariantParseError("`repeats` musi być dodatnią liczbą całkowitą.")
+
+    known_keys = {"model", "filter", "align", "repeats"}
     unknown_keys = set(fields) - known_keys
     if unknown_keys:
         raise VariantParseError(
             f"Nieznane pola wariantu: {', '.join(sorted(unknown_keys))}."
         )
 
-    return BenchmarkVariant(model=model, filter_preset=filter_preset, alignment=alignment)
+    return BenchmarkVariant(model=model, filter_preset=filter_preset, alignment=alignment, repeats=repeats)
 
 
 def build_variants(specs: list[str]) -> list[BenchmarkVariant]:
@@ -180,6 +190,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help="Katalog bazowy na wyniki benchmarku (domyslnie `data/benchmarks`).",
     )
+    parser.add_argument(
+        "--dataset-manifest",
+        type=Path,
+        default=None,
+        help="JSON z `samples`: audio, scenario, reference_text oraz opcjonalne dane speakerów.",
+    )
     return parser
 
 
@@ -188,6 +204,7 @@ class BenchmarkArgs:
     recordings_dir: Path
     variants: list[BenchmarkVariant]
     output_dir: Path | None = None
+    dataset_manifest: Path | None = None
 
 
 def parse_args(argv: list[str] | None = None) -> BenchmarkArgs:
@@ -208,6 +225,7 @@ def parse_args(argv: list[str] | None = None) -> BenchmarkArgs:
         recordings_dir=namespace.recordings_dir,
         variants=variants,
         output_dir=namespace.output_dir,
+        dataset_manifest=namespace.dataset_manifest,
     )
 
 
@@ -220,6 +238,27 @@ def iter_audio_files(recordings_dir: Path) -> list[Path]:
         if entry.is_file() and entry.suffix.lower() in AUDIO_EXTENSIONS
     ]
     return files
+
+
+def load_dataset_manifest(path: Path, recordings_dir: Path) -> list[dict[str, object]]:
+    """Wczytuje metadane datasetu, nie kopiując prywatnego audio ani gold labels."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise VariantParseError(f"Nie można odczytać manifestu datasetu `{path}`.") from exc
+    samples = payload.get("samples") if isinstance(payload, dict) else None
+    if not isinstance(samples, list) or not samples:
+        raise VariantParseError("Manifest datasetu musi zawierać niepustą listę `samples`.")
+    root = recordings_dir.resolve()
+    loaded: list[dict[str, object]] = []
+    for sample in samples:
+        if not isinstance(sample, dict) or not isinstance(sample.get("audio"), str):
+            raise VariantParseError("Każdy sample wymaga pola tekstowego `audio`.")
+        audio_path = (root / sample["audio"]).resolve()
+        if root not in audio_path.parents or not audio_path.is_file():
+            raise VariantParseError(f"Nieprawidłowa lub niedostępna ścieżka audio `{sample['audio']}`.")
+        loaded.append({**sample, "audio_path": audio_path})
+    return loaded
 
 
 def find_reference_path(audio_path: Path) -> Path | None:
@@ -268,6 +307,38 @@ def compute_wer(reference: str, hypothesis: str) -> float | None:
     return edits / len(ref_tokens)
 
 
+def compute_error_breakdown(reference: list[str], hypothesis: list[str]) -> dict[str, int]:
+    """Minimalny backtrace Levenshteina: substitutions/deletions/insertions."""
+    rows, cols = len(reference) + 1, len(hypothesis) + 1
+    matrix = [[(0, 0, 0, 0) for _ in range(cols)] for _ in range(rows)]
+    for index in range(1, rows):
+        matrix[index][0] = (index, 0, index, 0)
+    for index in range(1, cols):
+        matrix[0][index] = (index, 0, 0, index)
+    for row in range(1, rows):
+        for column in range(1, cols):
+            if reference[row - 1] == hypothesis[column - 1]:
+                matrix[row][column] = matrix[row - 1][column - 1]
+                continue
+            candidates = [
+                (matrix[row - 1][column][0] + 1, matrix[row - 1][column][1], matrix[row - 1][column][2] + 1, matrix[row - 1][column][3]),
+                (matrix[row][column - 1][0] + 1, matrix[row][column - 1][1], matrix[row][column - 1][2], matrix[row][column - 1][3] + 1),
+                (matrix[row - 1][column - 1][0] + 1, matrix[row - 1][column - 1][1] + 1, matrix[row - 1][column - 1][2], matrix[row - 1][column - 1][3]),
+            ]
+            matrix[row][column] = min(candidates, key=lambda item: item[0])
+    _, substitutions, deletions, insertions = matrix[-1][-1]
+    return {"substitutions": substitutions, "deletions": deletions, "insertions": insertions}
+
+
+def compute_cer(reference: str, hypothesis: str) -> float | None:
+    ref_chars = [character for character in reference.lower() if not character.isspace()]
+    hyp_chars = [character for character in hypothesis.lower() if not character.isspace()]
+    if not ref_chars:
+        return None
+    breakdown = compute_error_breakdown(ref_chars, hyp_chars)
+    return sum(breakdown.values()) / len(ref_chars)
+
+
 @dataclass(slots=True)
 class VariantRunResult:
     variant: BenchmarkVariant
@@ -278,23 +349,30 @@ class VariantRunResult:
     text: str = ""
     segments: list[dict[str, object]] = field(default_factory=list)
     wer: float | None = None
+    cer: float | None = None
+    errors: dict[str, int] | None = None
+    repeat: int = 1
+    phase: str = "warmed_inference"
+    manifest: dict[str, object] | None = None
 
 
 def _build_settings_for_variant(variant: BenchmarkVariant) -> AppSettings:
-    import os
-
-    os.environ[ENV_WHISPER_MODEL] = variant.model
-    os.environ[ENV_FILTER_PRESET] = variant.filter_preset
-    os.environ[ENV_ALIGNMENT_ENABLED] = "1" if variant.alignment else "0"
-    return AppSettings()
+    # Benchmark nie może mutować globalnego środowiska: każdy wariant ma własny,
+    # jawny i serializowalny zestaw parametrów.
+    return AppSettings(
+        whisper_model=variant.model,
+        asr_filter_preset=variant.filter_preset,
+        alignment_enabled=variant.alignment,
+    )
 
 
 async def _run_variant_on_file(
     variant: BenchmarkVariant,
     audio_path: Path,
+    provider: LocalTranscriptionProvider | None = None,
+    repeat: int = 1,
 ) -> VariantRunResult:
-    settings = _build_settings_for_variant(variant)
-    provider = LocalTranscriptionProvider(settings)
+    provider = provider or LocalTranscriptionProvider(_build_settings_for_variant(variant))
 
     start = time.perf_counter()
     try:
@@ -307,15 +385,21 @@ async def _run_variant_on_file(
             duration_seconds=duration,
             success=False,
             error=str(exc),
+            repeat=repeat,
+            phase="cold_load" if repeat == 1 else "warmed_inference",
         )
 
     duration = time.perf_counter() - start
 
     wer_value: float | None = None
+    cer_value: float | None = None
+    error_breakdown: dict[str, int] | None = None
     ref_path = find_reference_path(audio_path)
     if ref_path is not None:
         reference_text = ref_path.read_text(encoding="utf-8")
         wer_value = compute_wer(reference_text, result.text)
+        cer_value = compute_cer(reference_text, result.text)
+        error_breakdown = compute_error_breakdown(_tokenize(reference_text), _tokenize(result.text))
 
     return VariantRunResult(
         variant=variant,
@@ -325,7 +409,21 @@ async def _run_variant_on_file(
         text=result.text,
         segments=[segment.model_dump() for segment in result.segments],
         wer=wer_value,
+        cer=cer_value,
+        errors=error_breakdown,
+        repeat=repeat,
+        phase="cold_load" if repeat == 1 else "warmed_inference",
+        manifest=result.manifest.model_dump() if result.manifest else None,
     )
+
+
+def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as file:
+        json.dump(payload, file, ensure_ascii=False, indent=2)
+        file.write("\n")
+        temp_path = Path(file.name)
+    temp_path.replace(path)
 
 
 def _write_variant_outputs(output_dir: Path, run_result: VariantRunResult) -> None:
@@ -333,23 +431,24 @@ def _write_variant_outputs(output_dir: Path, run_result: VariantRunResult) -> No
     variant_dir = output_dir / audio_stem
     variant_dir.mkdir(parents=True, exist_ok=True)
 
-    json_path = variant_dir / f"{run_result.variant.name}.json"
-    json_path.write_text(
-        json.dumps(
-            {
-                "variant": run_result.variant.as_dict(),
-                "audio_file": run_result.audio_file,
-                "duration_seconds": run_result.duration_seconds,
-                "success": run_result.success,
-                "error": run_result.error,
-                "text": run_result.text,
-                "segments": run_result.segments,
-                "wer": run_result.wer,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
+    json_path = variant_dir / f"{run_result.variant.name}__repeat-{run_result.repeat}.json"
+    _atomic_write_json(
+        json_path,
+        {
+            "variant": run_result.variant.as_dict(),
+            "audio_file": run_result.audio_file,
+            "duration_seconds": run_result.duration_seconds,
+            "success": run_result.success,
+            "error": run_result.error,
+            "text": run_result.text,
+            "segments": run_result.segments,
+            "wer": run_result.wer,
+            "cer": run_result.cer,
+            "errors": run_result.errors,
+            "repeat": run_result.repeat,
+            "phase": run_result.phase,
+            "manifest": run_result.manifest,
+        },
     )
 
     md_lines = [
@@ -375,7 +474,7 @@ def _write_variant_outputs(output_dir: Path, run_result: VariantRunResult) -> No
                     f"**{segment['speaker']}**: {segment['text']}"
                 )
 
-    md_path = variant_dir / f"{run_result.variant.name}.md"
+    md_path = variant_dir / f"{run_result.variant.name}__repeat-{run_result.repeat}.md"
     md_path.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
 
@@ -419,14 +518,43 @@ async def run_benchmark(args: BenchmarkArgs) -> Path:
     output_dir = output_root / timestamp
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    _atomic_write_json(
+        output_dir / "run-manifest.json",
+        {
+            "artifact_version": "benchmark-artifact/v1",
+            "status": "running",
+            "variants": [variant.as_dict() for variant in args.variants],
+            "recordings": [path.name for path in audio_files],
+        },
+    )
     results: list[VariantRunResult] = []
+    providers = {
+        variant.name: LocalTranscriptionProvider(_build_settings_for_variant(variant))
+        for variant in args.variants
+    }
     for audio_path in audio_files:
         for variant in args.variants:
-            run_result = await _run_variant_on_file(variant, audio_path)
-            _write_variant_outputs(output_dir, run_result)
-            results.append(run_result)
+            for repeat in range(1, variant.repeats + 1):
+                run_result = await _run_variant_on_file(
+                    variant,
+                    audio_path,
+                    provider=providers[variant.name],
+                    repeat=repeat,
+                )
+                _write_variant_outputs(output_dir, run_result)
+                results.append(run_result)
 
     _write_summary(output_dir, results)
+    _atomic_write_json(
+        output_dir / "run-manifest.json",
+        {
+            "artifact_version": "benchmark-artifact/v1",
+            "status": "completed",
+            "variants": [variant.as_dict() for variant in args.variants],
+            "recordings": [path.name for path in audio_files],
+            "result_count": len(results),
+        },
+    )
     return output_dir
 
 

@@ -20,11 +20,13 @@ class ForcedAligner:
     przez alignment.
     """
 
-    def __init__(self, device: str = "cpu", language: str | None = None) -> None:
+    def __init__(self, device: str = "cpu", language: str | None = None, max_words_per_chunk: int = 120) -> None:
         self.device = device
         self.language = language
+        self.max_words_per_chunk = max(1, int(max_words_per_chunk))
         self._model = None
         self._metadata = None
+        self.warnings: list[str] = []
 
     def align(
         self,
@@ -34,15 +36,35 @@ class ForcedAligner:
     ) -> list[WordToken]:
         if not words:
             return words
-        try:
-            return self._align_with_whisperx(words, audio_path)
-        except Exception as exc:
-            logger.warning(
-                "Alignment nie powiodl sie dla `%s`, uzywam surowych timestampow Whispera: %s",
-                source_name,
-                exc,
-            )
-            return words
+        self.warnings = []
+        aligned: list[WordToken] = []
+        for chunk_start in range(0, len(words), self.max_words_per_chunk):
+            chunk = words[chunk_start : chunk_start + self.max_words_per_chunk]
+            try:
+                corrected = self._align_with_whisperx(chunk, audio_path)
+                aligned.extend(self._merge_aligned_chunk(chunk, corrected))
+            except Exception as exc:
+                self.warnings.append(f"chunk {chunk_start // self.max_words_per_chunk}: {exc}")
+                logger.warning(
+                    "Alignment nie powiodl sie dla `%s` (chunk %s), uzywam surowych timestampow: %s",
+                    source_name,
+                    chunk_start // self.max_words_per_chunk,
+                    exc,
+                )
+                aligned.extend(chunk)
+        return aligned
+
+    def _merge_aligned_chunk(self, original: list[WordToken], corrected: list[WordToken]) -> list[WordToken]:
+        """Nie gubi tokenów, gdy WhisperX zwróci tylko część słów chunku."""
+        output: list[WordToken] = []
+        corrected_index = 0
+        for raw in original:
+            if corrected_index < len(corrected) and corrected[corrected_index].text.strip() == raw.text.strip():
+                output.append(corrected[corrected_index])
+                corrected_index += 1
+            else:
+                output.append(raw)
+        return output
 
     def _align_with_whisperx(self, words: list[WordToken], audio_path: Path) -> list[WordToken]:
         import whisperx

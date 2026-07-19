@@ -2,12 +2,13 @@ services:
   echo:
     build: .
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     volumes:
       - .:/app
       - echo-data:/data
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       ECHO_HOST: 0.0.0.0
       ECHO_WHISPER_DEVICE: cuda
@@ -18,15 +19,12 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    command:
-      - uvicorn
-      - echo_app.app:create_app
-      - --factory
-      - --reload
-      - --host
-      - "0.0.0.0"
-      - --port
-      - "8765"
+    command: ["uvicorn", "echo_app.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8765"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8765/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   echo-data:

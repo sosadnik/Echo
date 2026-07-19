@@ -298,7 +298,7 @@
                   <option value="small">small</option>
                   <option value="medium">medium</option>
                   <option value="large-v3">large-v3</option>
-                  <option value="turbo">turbo</option>
+                  <option value="large-v3-turbo">large-v3-turbo</option>
                 </select>
                 <span class="field-hint">Wybierz jeden z dostępnych wariantów Whisper.</span>
               </label>
@@ -314,6 +314,16 @@
               </label>
 
               <label class="field settings-card-field">
+                <span class="field-label">Compute type</span>
+                <select id="settings-whisper-compute-type" name="whisper_compute_type" required>
+                  <option value="auto">auto</option>
+                  <option value="float16">float16</option>
+                  <option value="int8">int8</option>
+                </select>
+                <span class="field-hint" id="settings-effective-compute-type"></span>
+              </label>
+
+              <label class="field settings-card-field">
                 <span class="field-label">Diarization device</span>
                 <select id="settings-diarization-device" name="diarization_device" required>
                   <option value="cpu">cpu</option>
@@ -325,6 +335,36 @@
             </div>
 
             <input id="settings-diarization-model" name="diarization_model" type="hidden">
+          </section>
+
+          <section class="settings-block">
+            <div class="settings-block-header">
+              <h3>Pipeline audio</h3>
+              <p>Ustawienia są zapisywane dla nowych jobów.</p>
+            </div>
+            <div class="settings-grid">
+              <label class="field settings-card-field">
+                <span class="field-label">Filtr ASR</span>
+                <select id="settings-asr-filter-preset" name="asr_filter_preset">
+                  <option value="full">full</option>
+                  <option value="light">light</option>
+                  <option value="none">none</option>
+                </select>
+              </label>
+              <label class="field settings-card-field">
+                <span class="field-label">Filtr diaryzacji</span>
+                <select id="settings-diarization-filter-preset" name="diarization_filter_preset">
+                  <option value="none">none</option>
+                  <option value="light">light</option>
+                  <option value="full">full</option>
+                </select>
+              </label>
+              <label class="field settings-card-field">
+                <span class="field-label">Alignment</span>
+                <input id="settings-alignment-enabled" name="alignment_enabled" type="checkbox">
+                <span class="field-hint">Poprawia timestampy słów przez WhisperX.</span>
+              </label>
+            </div>
           </section>
 
           <div class="settings-actions">

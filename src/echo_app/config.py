@@ -15,8 +15,15 @@ DEFAULT_PORT = 8765
 RUNTIME_OVERRIDE_KEYS = (
     "whisper_model",
     "whisper_device",
+    "whisper_compute_type",
     "diarization_model",
     "diarization_device",
+    "alignment_enabled",
+    "asr_filter_preset",
+    "diarization_filter_preset",
+    "diarization_strict",
+    "speaker_overlap_threshold_seconds",
+    "segment_merge_gap_seconds",
 )
 
 
@@ -103,11 +110,7 @@ def _read_whisper_device() -> str:
 
 
 def _read_whisper_compute_type() -> str:
-    explicit = os.getenv("ECHO_WHISPER_COMPUTE_TYPE", "").strip().lower()
-    if explicit:
-        return explicit
-
-    return _default_compute_type(_read_whisper_device())
+    return os.getenv("ECHO_WHISPER_COMPUTE_TYPE", "auto").strip().lower() or "auto"
 
 
 def _read_diarization_model() -> str:
@@ -124,14 +127,29 @@ def _read_diarization_device() -> str:
     return _read_whisper_device()
 
 
-_PREPARE_FILTER_PRESETS = frozenset({"full", "light", "none"})
+_FILTER_PRESETS = frozenset({"full", "light", "none"})
 
 
-def _read_prepare_filter_preset() -> str:
-    raw = os.getenv("ECHO_PREPARE_FILTER_PRESET", "full").strip().lower()
-    if raw not in _PREPARE_FILTER_PRESETS:
-        return "full"
-    return raw
+def _read_filter_preset(name: str, default: str) -> str:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw and name == "ECHO_ASR_FILTER_PRESET":
+        raw = os.getenv("ECHO_PREPARE_FILTER_PRESET", default).strip().lower()
+    return raw if raw in _FILTER_PRESETS else default
+
+
+def _read_alignment_enabled() -> bool:
+    return os.getenv("ECHO_ALIGNMENT_ENABLED", "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _read_bool(name: str, default: bool = False) -> bool:
+    return os.getenv(name, str(default)).strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _read_nonnegative_float(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, str(default))))
+    except ValueError:
+        return default
 
 
 def _read_language_hint() -> str | None:
@@ -226,7 +244,18 @@ class AppSettings:
     whisper_compute_type: str = field(default_factory=_read_whisper_compute_type)
     diarization_model: str = field(default_factory=_read_diarization_model)
     diarization_device: str = field(default_factory=_read_diarization_device)
-    prepare_filter_preset: str = field(default_factory=_read_prepare_filter_preset)
+    alignment_enabled: bool = field(default_factory=_read_alignment_enabled)
+    asr_filter_preset: str = field(default_factory=lambda: _read_filter_preset("ECHO_ASR_FILTER_PRESET", "full"))
+    diarization_filter_preset: str = field(
+        default_factory=lambda: _read_filter_preset("ECHO_DIARIZATION_FILTER_PRESET", "none")
+    )
+    diarization_strict: bool = field(default_factory=lambda: _read_bool("ECHO_DIARIZATION_STRICT"))
+    speaker_overlap_threshold_seconds: float = field(
+        default_factory=lambda: _read_nonnegative_float("ECHO_SPEAKER_OVERLAP_THRESHOLD_SECONDS", 0.05)
+    )
+    segment_merge_gap_seconds: float = field(
+        default_factory=lambda: _read_nonnegative_float("ECHO_SEGMENT_MERGE_GAP_SECONDS", 1.2)
+    )
     language_hint: str | None = field(default_factory=_read_language_hint)
     min_speakers: int | None = field(default_factory=lambda: _read_optional_int("ECHO_MIN_SPEAKERS"))
     max_speakers: int | None = field(default_factory=lambda: _read_optional_int("ECHO_MAX_SPEAKERS"))
@@ -239,6 +268,7 @@ class AppSettings:
     whisper_cache_dir: Path = field(init=False)
     hf_home: Path = field(init=False)
     runtime_settings_path: Path = field(init=False)
+    effective_whisper_compute_type: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.recordings_dir = self.data_root / "recordings"
@@ -279,6 +309,11 @@ class AppSettings:
         self.apply_runtime_overrides(payload)
 
     def apply_runtime_overrides(self, overrides: dict[str, object]) -> None:
+        legacy_filter = overrides.get("prepare_filter_preset")
+        if legacy_filter is not None:
+            overrides = dict(overrides)
+            overrides.setdefault("asr_filter_preset", legacy_filter)
+            overrides.setdefault("diarization_filter_preset", "none")
         for key in RUNTIME_OVERRIDE_KEYS:
             if key not in overrides:
                 continue
@@ -289,8 +324,15 @@ class AppSettings:
         return {
             "whisper_model": self.whisper_model,
             "whisper_device": self.whisper_device,
+            "whisper_compute_type": self.whisper_compute_type,
             "diarization_model": self.diarization_model,
             "diarization_device": self.diarization_device,
+            "alignment_enabled": self.alignment_enabled,
+            "asr_filter_preset": self.asr_filter_preset,
+            "diarization_filter_preset": self.diarization_filter_preset,
+            "diarization_strict": self.diarization_strict,
+            "speaker_overlap_threshold_seconds": self.speaker_overlap_threshold_seconds,
+            "segment_merge_gap_seconds": self.segment_merge_gap_seconds,
         }
 
     def save_runtime_overrides(self) -> None:
@@ -299,12 +341,17 @@ class AppSettings:
         self.runtime_settings_path.write_text(f"{payload}\n", encoding="utf-8")
 
     def _normalize_runtime_settings(self) -> None:
-        self.whisper_model = _coerce_string(self.whisper_model, "large-v3-turbo")
+        self.whisper_model = _canonical_whisper_model(self.whisper_model)
         self.whisper_device = _coerce_string(self.whisper_device, "cpu", lowercase=True)
         self.whisper_compute_type = _coerce_string(
             self.whisper_compute_type,
-            _default_compute_type(self.whisper_device),
+            "auto",
             lowercase=True,
+        )
+        self.effective_whisper_compute_type = (
+            _default_compute_type(self.whisper_device)
+            if self.whisper_compute_type == "auto"
+            else self.whisper_compute_type
         )
         self.diarization_model = _coerce_string(
             self.diarization_model,
@@ -315,13 +362,47 @@ class AppSettings:
             self.whisper_device,
             lowercase=True,
         )
-        self.prepare_filter_preset = _coerce_string(
-            self.prepare_filter_preset,
+        self.alignment_enabled = bool(self.alignment_enabled)
+        self.asr_filter_preset = _coerce_string(
+            self.asr_filter_preset,
             "full",
             lowercase=True,
         )
-        if self.prepare_filter_preset not in _PREPARE_FILTER_PRESETS:
-            self.prepare_filter_preset = "full"
+        if self.asr_filter_preset not in _FILTER_PRESETS:
+            self.asr_filter_preset = "full"
+        self.diarization_filter_preset = _coerce_string(
+            self.diarization_filter_preset,
+            "none",
+            lowercase=True,
+        )
+        if self.diarization_filter_preset not in _FILTER_PRESETS:
+            self.diarization_filter_preset = "none"
+        self.diarization_strict = bool(self.diarization_strict)
+        try:
+            self.speaker_overlap_threshold_seconds = max(0.0, float(self.speaker_overlap_threshold_seconds))
+        except (TypeError, ValueError):
+            self.speaker_overlap_threshold_seconds = 0.05
+        try:
+            self.segment_merge_gap_seconds = max(0.0, float(self.segment_merge_gap_seconds))
+        except (TypeError, ValueError):
+            self.segment_merge_gap_seconds = 1.2
         self.language_hint = _coerce_optional_string(self.language_hint)
         self.min_speakers = _coerce_optional_int(self.min_speakers)
         self.max_speakers = _coerce_optional_int(self.max_speakers)
+
+    @property
+    def prepare_filter_preset(self) -> str:
+        """Zgodność z konfiguracją sprzed rozdzielenia torów audio."""
+
+        return self.asr_filter_preset
+
+    @prepare_filter_preset.setter
+    def prepare_filter_preset(self, value: object) -> None:
+        self.asr_filter_preset = str(value or "")
+
+
+def _canonical_whisper_model(value: object) -> str:
+    normalized = _coerce_string(value, "large-v3-turbo")
+    if normalized.lower() in {"turbo", "large-v3-turbo"}:
+        return "large-v3-turbo"
+    return normalized
