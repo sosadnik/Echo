@@ -133,7 +133,8 @@ Backend uruchamiasz normalnie na maszynie z GPU (`python3 -m echo_app.main`), a 
 Zamiast instalować ciężki pipeline bezpośrednio na serwerze z GPU (np. Pop!_OS + RTX 5070 Ti),
 wygodniej jest trzymać go w kontenerze — `Dockerfile` + `compose.yaml` w repo są przeznaczone
 **wyłącznie na maszynę z GPU**; Mac nadal pracuje natywnie z providerem `mock`. Dystrybucja
-końcowa (`portable exe`, patrz niżej) nie zmienia się — Docker służy tylko developmentowi.
+końcowa (`portable exe`, patrz niżej) nie zmienia się — Docker obsługuje lokalną instancję
+GPU w trybie stałym albo, po dołączeniu override'u, developerskim.
 
 Build i start (na serwerze z GPU, w katalogu repo):
 
@@ -141,9 +142,16 @@ Build i start (na serwerze z GPU, w katalogu repo):
 docker compose up -d --build
 ```
 
-`compose.yaml` bind-mountuje repo do `/app` i uruchamia `uvicorn --reload`, więc edycja pliku
-w `src/echo_app/` na serwerze przeładowuje backend bez rebuildu obrazu. Rebuild obrazu
-(`--build`) jest potrzebny tylko po zmianie `Dockerfile`/`pyproject.toml`.
+`compose.yaml` bind-mountuje repo do `/app`, ale uruchamia stabilny serwer bez `--reload`.
+Po zmianie kodu zrestartuj usługę przez `docker compose restart echo`. Jawny tryb
+developerski z automatycznym przeładowaniem uruchomisz przez:
+
+```bash
+docker compose -f compose.yaml -f compose.dev.yaml up
+```
+
+Rebuild obrazu (`--build`) jest potrzebny po zmianie `Dockerfile`, zależności albo
+plików kopiowanych do obrazu.
 
 Logi:
 
@@ -167,8 +175,9 @@ Dane aplikacji (nagrania, SQLite, cache modeli w `HF_HOME`) trafiają do named v
 `echo-data:/data` — przeżywają `docker compose down` i rebuild obrazu; usuwa je dopiero
 `docker compose down -v` albo `docker volume rm echo_echo-data`.
 
-Workflow iteracji kodu Mac → serwer GPU: `git push` na Macu, `git pull` na serwerze — `--reload`
-sam podłapie zmiany w `src/`, bez potrzeby restartu compose.
+Workflow iteracji kodu Mac → serwer GPU: `git push` na Macu, `git pull` na serwerze,
+a następnie `docker compose restart echo`. Podczas krótkiej sesji developerskiej można
+zamiast tego użyć override'u `compose.dev.yaml`, w którym `--reload` jest jawnie włączony.
 
 ### Pułapki napotkane przy pierwszym uruchomieniu
 

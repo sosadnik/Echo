@@ -415,19 +415,55 @@ class LocalTranscriptionProvider:
             hardware=self._collect_hardware(),
         )
 
-    def _read_app_commit(self) -> str | None:
+    def _read_app_commit(self, repository_root: Path | None = None) -> str | None:
+        repository_root = repository_root or Path(__file__).resolve().parents[2]
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--short=12", "HEAD"],
-                cwd=Path(__file__).resolve().parents[2],
+                cwd=repository_root,
                 check=True,
                 capture_output=True,
                 text=True,
                 timeout=2,
             )
         except (OSError, subprocess.SubprocessError):
+            return self._read_commit_from_git_metadata(repository_root)
+        return result.stdout.strip() or self._read_commit_from_git_metadata(repository_root)
+
+    @staticmethod
+    def _read_commit_from_git_metadata(repository_root: Path) -> str | None:
+        """Read HEAD without requiring the git binary in the runtime image."""
+        git_dir = repository_root / ".git"
+        try:
+            if git_dir.is_file():
+                marker = git_dir.read_text(encoding="utf-8").strip()
+                if not marker.startswith("gitdir:"):
+                    return None
+                git_dir = Path(marker.removeprefix("gitdir:").strip())
+                if not git_dir.is_absolute():
+                    git_dir = repository_root / git_dir
+
+            head = (git_dir / "HEAD").read_text(encoding="utf-8").strip()
+            if head.startswith("ref:"):
+                reference = head.removeprefix("ref:").strip()
+                reference_path = git_dir / reference
+                if reference_path.is_file():
+                    head = reference_path.read_text(encoding="utf-8").strip()
+                else:
+                    packed_refs = (git_dir / "packed-refs").read_text(encoding="utf-8")
+                    head = next(
+                        (line.split(" ", 1)[0] for line in packed_refs.splitlines()
+                         if line.endswith(f" {reference}")),
+                        "",
+                    )
+        except (OSError, StopIteration):
             return None
-        return result.stdout.strip() or None
+
+        try:
+            int(head, 16)
+        except ValueError:
+            return None
+        return head[:12] if len(head) >= 12 else None
 
     def _collect_hardware(self) -> dict[str, str | int | float]:
         hardware: dict[str, str | int | float] = {

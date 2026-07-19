@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -78,6 +79,22 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual(manifest.hardware["gpu"], "RTX test")
         self.assertEqual(manifest.library_versions["echo_commit"], "abc123")
         self.assertNotIn("hf_private_secret", manifest.model_dump_json())
+
+    def test_app_commit_falls_back_to_git_metadata_without_git_binary(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            repository_root = Path(temp_dir)
+            ref = repository_root / ".git" / "refs" / "heads" / "master"
+            ref.parent.mkdir(parents=True)
+            (repository_root / ".git" / "HEAD").write_text(
+                "ref: refs/heads/master\n", encoding="utf-8"
+            )
+            ref.write_text("0123456789abcdef0123456789abcdef01234567\n", encoding="utf-8")
+            provider = LocalTranscriptionProvider(AppSettings())
+
+            with patch("echo_app.transcription.subprocess.run", side_effect=FileNotFoundError):
+                commit = provider._read_app_commit(repository_root)
+
+        self.assertEqual(commit, "0123456789ab")
 
     def test_legacy_minimal_result_json_still_exposes_segments(self) -> None:
         payload = {
