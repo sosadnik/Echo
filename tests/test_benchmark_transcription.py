@@ -312,6 +312,38 @@ class DatasetManifestTests(unittest.TestCase):
 
 
 class BenchmarkRunTests(unittest.TestCase):
+    def test_provider_is_built_lazily_for_each_variant(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            recordings = root / "recordings"
+            recordings.mkdir()
+            (recordings / "sample.wav").write_bytes(b"audio")
+            variants = [BenchmarkVariant("small"), BenchmarkVariant("medium")]
+            args = BenchmarkArgs(recordings, variants, root / "out", run_id="lazy", warmup_runs=0)
+            events: list[str] = []
+
+            def fake_build(variant):
+                events.append(f"build:{variant.name}")
+                return object()
+
+            async def fake_run(variant, sample, provider=None, repeat=1, phase="warmed_inference"):
+                self.assertIsNotNone(provider)
+                events.append(f"run:{variant.name}")
+                return VariantRunResult(
+                    variant, sample.audio_path.name, 1.0, True,
+                    repeat=repeat, phase=phase, sample_id=sample.sample_id,
+                    scenario=sample.scenario, metrics={"normalized_wer": 0.0, "cer": 0.0},
+                )
+
+            with (
+                patch("benchmark_transcription._build_provider_for_variant", side_effect=fake_build),
+                patch("benchmark_transcription._run_variant_on_sample", side_effect=fake_run),
+            ):
+                asyncio.run(run_benchmark(args))
+
+        self.assertEqual(events, ["build:small__full__align-off", "run:small__full__align-off",
+                                  "build:medium__full__align-off", "run:medium__full__align-off"])
+
     def test_three_repeats_reuse_run_artifacts_and_resume_skips_successes(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

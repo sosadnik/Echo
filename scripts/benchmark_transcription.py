@@ -903,13 +903,12 @@ async def run_benchmark(args: BenchmarkArgs) -> Path:
         {**manifest_base, "status": "running"},
     )
     results: list[VariantRunResult] = []
-    providers = {
-        variant.name: _build_provider_for_variant(variant)
-        for variant in args.variants
-    }
     try:
         for variant in args.variants:
-            provider = providers[variant.name]
+            # Keep at most one model stack resident. A full control matrix may
+            # contain several multi-gigabyte Whisper models, so retaining all
+            # providers until the end can exhaust GPU or host memory.
+            provider = _build_provider_for_variant(variant)
             for warmup_index in range(1, args.warmup_runs + 1):
                 warmup_path = _result_path(output_dir, "_warmup", variant.name, warmup_index, "warmup")
                 warmup_result = _load_complete_result(warmup_path, variant) if args.resume else None
